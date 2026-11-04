@@ -1,0 +1,113 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+version = '1.0.0-rc.2'
+group = 'audio.sprocket.lagsense'
+base { archivesName = 'lagsense' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+repositories {
+    maven { url = 'https://maven.ftb.dev/releases'; content { includeGroup 'dev.ftb.mods' } }
+    maven { url = 'https://chocolateminecraft.com/maven'; content { includeGroup 'xaero.pac' } }
+}
+def ftbChunks = "dev.ftb.mods:ftb-chunks-neoforge:${providers.gradleProperty('ftbChunksVersion').getOrElse('26.1.2.9')}"
+def ftbTeams = 'dev.ftb.mods:ftb-teams-neoforge:26.1.2.5'
+def ftbLibrary = 'dev.ftb.mods:ftb-library-neoforge:26.1.2.11'
+def opac = 'xaero.pac:open-parties-and-claims-neoforge-26.1.2:0.33.0'
+def backups = 'dev.ftb.mods:ftb-backups-3:26.1.2.2'
+dependencies {
+    // Native font-metric checks use the same FreeType implementation as Minecraft.
+    def os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    def arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    def nativePlatform = os.contains('win') ? 'windows' : os.contains('mac') ? 'macos' : 'linux'
+    def nativeArch = arch in ['aarch64', 'arm64'] ? '-arm64' : nativePlatform == 'windows' && arch in ['x86', 'i386'] ? '-x86' : ''
+    testRuntimeOnly "org.lwjgl:lwjgl:3.4.1:natives-${nativePlatform}${nativeArch}"
+    testRuntimeOnly "org.lwjgl:lwjgl-freetype:3.4.1:natives-${nativePlatform}${nativeArch}"
+    testRuntimeOnly "org.lwjgl:lwjgl-glfw:3.4.1:natives-${nativePlatform}${nativeArch}"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengl:3.4.1:natives-${nativePlatform}${nativeArch}"
+    // API references only: none of these mods are bundled or required at runtime.
+    compileOnly(ftbChunks) { transitive = false }
+    compileOnly(ftbTeams) { transitive = false }
+    compileOnly(opac) { transitive = false }
+    compileOnly(backups) { transitive = false }
+    if (providers.gradleProperty('backupTest').getOrElse('false') == 'true') {
+        runtimeOnly(backups) { transitive = false }
+        runtimeOnly(ftbLibrary) { transitive = false }
+    }
+    // Optional development runs: -PclaimTest=ftb, opac, or both.
+    def claims = providers.gradleProperty('claimTest').getOrElse('none')
+    if (claims in ['ftb', 'both']) {
+        runtimeOnly(ftbChunks) { transitive = false }
+        runtimeOnly(ftbTeams) { transitive = false }
+        runtimeOnly(ftbLibrary) { transitive = false }
+    }
+    if (claims in ['opac', 'both']) runtimeOnly(opac) { transitive = false }
+}
+neoForge {
+    version = providers.gradleProperty('neoForgeVersion').getOrElse('26.1.2.121')
+    runs {
+        client { client() }
+        localClient { client(); gameDirectory = file('run-local-client'); programArguments.addAll('--username', 'ProfileTester', '--quickPlayMultiplayer', '127.0.0.1:25569'); if (providers.gradleProperty('smallUi').getOrElse('false') == 'true') programArguments.addAll('--width', '640', '--height', '480') }
+        bareClient { client(); loadedMods = []; gameDirectory = file('run-bare-client'); programArguments.addAll('--username', 'BareTester', '--quickPlayMultiplayer', '127.0.0.1:25569') }
+        server { server(); programArgument '--nogui'; gameDirectory = file('run-server') }
+        bareServer { server(); loadedMods = []; programArgument '--nogui'; gameDirectory = file('run-server') }
+    }
+    mods { lagsense { sourceSet(sourceSets.main) } }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.register('verifyCore', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'audio.sprocket.lagsense.CoreChecks'
+    if (providers.gradleProperty('auditArchives').isPresent()) systemProperty 'lagsense.audit.archives', providers.gradleProperty('auditArchives').get()
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+check.dependsOn verifyCore
+['Small':'256m','Large':'2g'].each { label, heap ->
+    tasks.register("verifyProfilingLimits${label}", JavaExec) {
+        dependsOn testClasses
+        classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+        mainClass = 'audio.sprocket.lagsense.ProfilingLimitsChecks'
+        maxHeapSize = heap
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+    }
+}
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
+// The checks use an executable assertion harness, run by verifyCore, rather than a test framework.
+tasks.named('test') { failOnNoDiscoveredTests = false }
+
+// Opt-in headless coverage fixture; never included in release jars or ordinary dev runs.
+if (providers.gradleProperty('coverageAudit').getOrElse('false') == 'true') {
+    sourceSets { audit { compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath; runtimeClasspath += output + compileClasspath } }
+    neoForge.mods { lagsense_audit { sourceSet(sourceSets.audit) } }
+    neoForge.runs { coverageAudit { server(); programArgument '--nogui'; gameDirectory = file('work/coverage-audit/server') } }
+    tasks.named('runCoverageAudit') {
+        doFirst { delete file('work/coverage-audit/server/audit-result.json'), file('work/coverage-audit/server/audit-failure.txt') }
+        doLast {
+            def failed = file('work/coverage-audit/server/audit-failure.txt')
+            if (failed.exists() || !file('work/coverage-audit/server/audit-result.json').exists()) throw new GradleException(failed.exists() ? failed.text : 'Coverage fixture did not produce a result')
+        }
+    }
+}
+
+// Optional file:// browser regression checks; requires Node 22+ and a Chromium browser.
+tasks.register('verifyHtmlBrowser', Exec) {
+    dependsOn verifyCore
+    commandLine 'node', 'src/test/browser/html-report.mjs', providers.gradleProperty('htmlBrowser').getOrElse('C:/Program Files/Google/Chrome/Application/chrome.exe'), providers.gradleProperty('htmlBrowserTag').getOrElse('chrome')
+}
+
+// Explicit hidden-context GPU check. No Minecraft window or input automation.
+tasks.register('verifyWorldDisplayGpu', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'audio.sprocket.lagsense.WorldDisplayGpuChecks'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+// Distribute the project license alongside the bundled font notices.
+tasks.named('jar') {
+    from('LICENSE') { into 'META-INF' }
+}

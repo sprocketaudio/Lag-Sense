@@ -1,0 +1,90 @@
+# LagSense SERVER-LOCAL configuration.
+# Edit this file, then run /lagsense reload (operator/console), or restart.
+# In-game capture/history controls also save their changes to this file.
+
+[capture.timer]
+enabled = false
+interval_minutes = 5 # 1–1440; busy deadlines are skipped, not queued.
+duration_seconds = 30 # 5–120, shorter than the interval.
+
+[capture.spikes]
+enabled = false
+duration_seconds = 10 # Follow-up capture; cannot reconstruct an earlier hitch.
+cooldown_seconds = 120 # 30–86400, measured AFTER the capture finishes.
+tps_alert_threshold = 12.0 # TPS must stay BELOW this; 1–20, or 0 to disable.
+sustain_seconds = 10 # TPS condition must last 1–120 seconds.
+tick_work_alert_ms = 0.0 # Optional second trigger: tick work >= this ms; 0 disables, max 10000.
+consecutive_ticks = 3 # Tick-work condition only; 1–100 consecutive slow ticks.
+# If both thresholds are enabled, EITHER condition can start a capture.
+# Detection warms up for 30 seconds after enabling/changing spike settings.
+monitor_empty_server = false # Ignore idle/paused servers by default.
+
+[history]
+enabled = false
+max_profiles = 10 # 1–50; oldest saves are pruned.
+max_mib = 32 # 8–256; turning OFF keeps saves subject to retention limits.
+
+[profiling]
+mod_tasks = true # CPU stack samples during captures; can be disabled independently.
+detailed_callbacks = false # Time NeoForge game-bus listener dispatches during captures. Adds overhead.
+
+[profiling.limits]
+mode = "adaptive" # adaptive / custom
+# Ceilings, allocated only as new results are collected. Custom budgets also respect free heap.
+event_mib = 128 # 1–512, Custom mode
+cpu_mib = 128 # 1–512 per scope: server samples and all background threads separately
+jfr_mib = 128 # 16–512 of rolling disk storage, Custom mode
+stack_depth = 128 # 16–512 retained frames. The JVM may record fewer frames.
+
+[backups]
+mode = "defer_automatic" # defer_automatic / warn / ignore; optional FTB Backups 3 integration.
+grace_seconds = 60 # 0–3600 after backup finishes. One due timer capture is deferred.
+# Manual captures remain available and overlapping captures are labelled.
+
+[discord]
+enabled = false # Opt-in external delivery to the webhook's channel.
+webhook_url = "" # Secret HTTPS discord.com incoming webhook; never put in chat.
+webhook_url_env = "LAGSENSE_DISCORD_WEBHOOK" # Optional environment fallback.
+server_name = "Minecraft server"
+avatar_url = "" # Optional public HTTPS image URL.
+upload_limit_mib = 10 # Set to the attachment allowance for this webhook destination (1–128).
+
+# Each delivery section is independent. Delivery never enables capture.
+# Timer: each completed scheduled capture, independent of spike thresholds/cooldown.
+[discord.timer]
+enabled = false
+cooldown_seconds = 0 # 0 = every qualifying timer result; 0–86400.
+top_results = 5 # 1–10 results per contributor section and chunks.
+minimum_ms_per_tick = 0.0 # 0 disables this filter; average cost per captured tick.
+minimum_tick_percent = 0.0 # 0 disables; percentage of ACTUAL measured tick work.
+match = "either" # either / both; considers only enabled (nonzero) filters.
+group_by = "target" # target / type / both. Types combine kind, registry ID and dimension.
+attachment = "none" # none / html / json / csv. Sends at most one report file.
+mention_severity = "degraded" # never / critical / degraded / warning / always.
+mention_role_id = "" # Optional numeric role ID.
+
+# Spike delivery has its own cooldown and filters.
+[discord.spikes]
+enabled = false
+cooldown_seconds = 600
+top_results = 5
+minimum_ms_per_tick = 0.0
+minimum_tick_percent = 0.0
+match = "either"
+group_by = "target"
+attachment = "none"
+mention_severity = "degraded"
+mention_role_id = ""
+
+# Enable to send completed manual profiles and allow /lagsense discord send.
+[discord.manual]
+enabled = false
+cooldown_seconds = 0
+top_results = 5
+minimum_ms_per_tick = 0.0
+minimum_tick_percent = 0.0
+match = "either"
+group_by = "target"
+attachment = "none"
+mention_severity = "degraded"
+mention_role_id = ""

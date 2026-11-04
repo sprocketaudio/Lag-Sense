@@ -1,0 +1,8 @@
+{
+  "key.category.lagsense.controls": "LagSense",
+  "key.lagsense.overlay": "Hide/show performance visuals",
+  "key.lagsense.report": "Open LagSense profiler",
+  "key.lagsense.settings": "Open LagSense settings",
+  "key.lagsense.fps": "Client FPS profile / stop capture",
+  "key.lagsense.capture": "Start/stop capture (operators) or view results"
+}

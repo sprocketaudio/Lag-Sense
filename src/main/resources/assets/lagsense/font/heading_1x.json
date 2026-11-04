@@ -1,0 +1,22 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "lagsense:notosans-semibold.ttf",
+      "size": 10.5,
+      "oversample": 1,
+      "shift": [
+        0,
+        0
+      ]
+    },
+    {
+      "type": "reference",
+      "id": "lagsense:symbols_1x"
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:default"
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+<div class="app">
+  <header class="masthead">
+    <div class="brand">
+      LagSense<span class="wordmark-rule" aria-hidden="true"></span>
+    </div>
+    <div class="heading">
+      <h1 id="report-title">Captured report</h1>
+      <p id="capture-context">Opening capture…</p>
+    </div>
+    <label class="theme-control"
+      >Theme<select id="theme" aria-label="Report theme">
+        <option value="obsidian_gold">Obsidian + Gold</option>
+        <option value="charcoal_ice">Charcoal + Ice</option>
+        <option value="midnight_violet">Midnight + Violet</option>
+      </select></label
+    >
+  </header>
+  <div class="capture-notices" id="notices" aria-live="polite"></div>
+  <nav id="navigation" aria-label="Report sections"></nav>
+  <main>
+    <section id="overview" aria-label="Capture summary"></section>
+    <section id="explorer" hidden>
+      <div class="toolbar" id="toolbar">
+        <label class="search-label"
+          >Search<input
+            id="search"
+            type="search"
+            placeholder="Registry ID, method, mod or coordinates"
+            autocomplete="off"
+            spellcheck="false"
+        /></label>
+        <label id="scope-label">Threads<select id="scope"></select></label>
+        <label id="dimension-label"
+          >Dimension<select id="dimension"></select
+        ></label>
+        <label id="kind-label">Category<select id="category"></select></label>
+        <label id="group-label">Group<select id="group"></select></label>
+        <label id="sort-label">Sort<select id="sort"></select></label>
+        <label id="direction-label"
+          >Change<select id="direction">
+            <option value="all">All</option>
+            <option value="higher">Higher cost</option>
+            <option value="lower">Lower cost</option>
+          </select></label
+        >
+        <button id="collapse" type="button">Collapse all</button>
+      </div>
+      <p class="metric-note" id="metric-note"></p>
+      <div id="map" hidden>
+        <div class="map-tools">
+          <button id="map-fit" type="button">Fit</button
+          ><button id="map-minus" type="button" aria-label="Zoom out">−</button
+          ><button id="map-plus" type="button" aria-label="Zoom in">+</button
+          ><span id="map-context">Measured chunks</span
+          ><span class="colour-key" title="Absolute timing scale, 0–10,000 µs/t"
+            >0 <span class="colourbar"></span> 10,000 µs/t</span
+          >
+        </div>
+        <canvas
+          id="chunk-map"
+          width="1100"
+          height="380"
+          tabindex="0"
+          role="img"
+          aria-label="Measured chunk heatmap. Select a chunk to find its results in the table below. Use arrow keys to pan and plus or minus to zoom."
+        ></canvas>
+        <p class="map-hint" id="map-hint">
+          Wheel to zoom · drag to pan · select a measured chunk
+        </p>
+      </div>
+      <div class="result-head">
+        <h2 id="result-title">Results</h2>
+        <span id="result-count"></span>
+      </div>
+      <div class="table-scroll">
+        <table id="results">
+          <thead id="result-columns"></thead>
+          <tbody id="result-rows"></tbody>
+        </table>
+      </div>
+      <p id="empty" class="empty" hidden></p>
+      <div class="pagination">
+        <span id="page-status" role="status"></span>
+        <div>
+          <label
+            >Rows<select id="page-size">
+              <option>50</option>
+              <option selected>100</option>
+              <option>200</option>
+            </select></label
+          ><button id="previous" type="button">Previous</button
+          ><label
+            >Page<input
+              id="page-number"
+              type="number"
+              min="1"
+              value="1"
+              aria-label="Result page" /></label
+          ><span id="page-total"></span
+          ><button id="next" type="button">Next</button>
+        </div>
+      </div>
+      <section
+        id="selection"
+        class="selection"
+        hidden
+        aria-label="Selected result details"
+      >
+        <div class="result-head">
+          <h2 id="detail-title">Details</h2>
+          <button id="detail-close" type="button">Close details</button>
+        </div>
+        <div id="detail-body"></div>
+      </section>
+    </section>
+    <p id="activity" class="activity" role="status">Preparing report…</p>
+    <noscript
+      ><p class="notice">
+        Enable JavaScript to explore the captured data. This file contains its
+        own viewer and data.
+      </p></noscript
+    >
+  </main>
+  <footer>
+    <span>Captured measurements · read-only report</span>
+    <div class="footer-help">
+      <details id="report-help">
+        <summary>About these measurements</summary>
+        <p>
+          Target and event timings include the work they call, so the same work
+          can appear in more than one result. CPU samples show which Java code
+          was running when each sample was taken. Their percentages describe how
+          often code appeared in the samples rather than CPU usage or elapsed
+          time.
+        </p>
+        <p>
+          A missing result does not mean an object used no time or was removed
+          from the world. Some activity cannot be measured, and any known
+          capture limits are shown above.
+        </p>
+        <p>
+          This file may include coordinates, thread names and UUIDs. Review it
+          before sharing.
+        </p>
+      </details>
+    </div>
+  </footer>
+</div>

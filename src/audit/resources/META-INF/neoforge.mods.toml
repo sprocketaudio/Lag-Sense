@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+[[mods]]
+modId="lagsense_audit"
+version="1"
+displayName="LagSense coverage test fixture"

@@ -1,0 +1,27 @@
+{
+  "required": true,
+  "package": "audio.sprocket.lagsense.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "ServerTimingMixin",
+    "GameEventBusMixin",
+    "EntityTimingMixin",
+    "BlockTimingMixin",
+    "ScheduledTimingMixin",
+    "RandomTimingMixin"
+  ],
+  "client": [
+    "ClientRenderTimingMixin",
+    "ClientGpuTimingMixin",
+    "FontProviderAccessor",
+    "GuiGlyphFilteringMixin",
+    "WorldTextRenderTypeAccessor",
+    "WorldTextSetupAccessor",
+    "WorldTextBindingAccessor",
+    "KeyMappingLookupAccessor",
+    "ShortcutKeyboardMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
