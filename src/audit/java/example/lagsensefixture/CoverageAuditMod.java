@@ -1,6 +1,6 @@
 package example.lagsensefixture;
 
-import audio.sprocket.lagsense.*;
+import net.sprocketgames.lagsense.*;
 import java.nio.file.*;
 import java.util.*;
 import net.minecraft.core.BlockPos;
@@ -173,7 +173,7 @@ public final class CoverageAuditMod {
         if(Profiler.delivery!=null)Profiler.delivery.close();
         var section=new ServerSettings.Delivery(true,0,5,0,0,"either","target","html","","degraded");
         var discord=new ServerSettings.Discord(true,"https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwx","Audit server",section,section,section,128);
-        var sleeper=Class.forName("audio.sprocket.lagsense.DiscordDelivery$Sleeper");
+        var sleeper=Class.forName("net.sprocketgames.lagsense.DiscordDelivery$Sleeper");
         var constructor=DiscordDelivery.class.getDeclaredConstructor(ServerSettings.Discord.class,DiscordDelivery.Transport.class,sleeper,java.util.function.Consumer.class);constructor.setAccessible(true);
         var noSleep=java.lang.reflect.Proxy.newProxyInstance(sleeper.getClassLoader(),new Class<?>[]{sleeper},(p,m,args)->null);
         Profiler.delivery=constructor.newInstance(discord,(DiscordDelivery.Transport)(uri,body)->{discordHtml.set(new String(body.bytes(),java.nio.charset.StandardCharsets.UTF_8));return new DiscordDelivery.Response(204,0);},noSleep,(java.util.function.Consumer<String>)System.out::println);

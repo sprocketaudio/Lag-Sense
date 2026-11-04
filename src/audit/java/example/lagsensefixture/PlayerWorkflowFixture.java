@@ -1,6 +1,6 @@
 package example.lagsensefixture;
 
-import audio.sprocket.lagsense.*;
+import net.sprocketgames.lagsense.*;
 
 import java.nio.file.*;
 import java.util.*;
@@ -64,7 +64,7 @@ public final class PlayerWorkflowFixture {
             for(int index:new int[]{-1,scoped.entries().size(),Integer.MAX_VALUE}){mark(player,CAPTURE,index);check(state().marker()==null,"Forged indexes do not select private targets");}
             mark(player,CAPTURE-1,0);check(state().marker()==null,"Stale report IDs cannot mark targets");
             String json=Profiler.JSON.toJson(scoped);check(!json.contains("fixture:private")&&!json.contains("Private#method"),"Scoped JSON exports contain no private diagnostics/targets");
-            Path html=areas.getParent().resolve("scoped-export.html");Files.deleteIfExists(html);HtmlReportExport.write(html,scoped,audio.sprocket.lagsense.client.UiTheme.DEFAULT);check(!ReportExport.csv(scoped).contains("fixture:private")&&!Files.readString(html).contains("fixture:private"),"CSV/HTML exports contain only scoped retained records");
+            Path html=areas.getParent().resolve("scoped-export.html");Files.deleteIfExists(html);HtmlReportExport.write(html,scoped, net.sprocketgames.lagsense.client.UiTheme.DEFAULT);check(!ReportExport.csv(scoped).contains("fixture:private")&&!Files.readString(html).contains("fixture:private"),"CSV/HTML exports contain only scoped retained records");
             ui.forget(player.getUUID());ui.request(player,new ProfilerRequest("toggle"));check(!Profiler.busy(),"Ordinary Ctrl+F10 protocol opens results without starting or stopping profiling");
             ui.history(player,new ArchiveRequestPayload("list",0,0,false,10,32));stage=2;return false;
         }

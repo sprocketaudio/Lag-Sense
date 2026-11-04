@@ -1,6 +1,6 @@
 {
   "required": true,
-  "package": "audio.sprocket.lagsense.mixin",
+  "package": "net.sprocketgames.lagsense.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "ServerTimingMixin",

@@ -140,32 +140,6 @@ incomplete captures, and oversized transfers or exports fail explicitly rather
 than silently removing results. HTML, JSON and CSV exports include all available
 retained data and can contain coordinates, entity UUIDs and server diagnostics.
 
-## Building and development
-
-Build with Java 25:
-
-```sh
-./gradlew build
-```
-
-On Windows, use `gradlew.bat`. The release jar is written to `build/libs/`.
-The build runs the core regression suite, including permissions, capture
-accounting, archive compatibility, exports and UI layout checks.
-
-Development tasks:
-
-```sh
-./gradlew runClient
-./gradlew runServer
-./gradlew verifyHtmlBrowser
-./gradlew -PcoverageAudit=true runCoverageAudit
-```
-
-HTML browser checks require Node.js 22+ and Chrome. Use `-PhtmlBrowser=<path>`
-to select another Chromium browser. The coverage audit uses a disposable test
-server. To load optional integrations during development, add `-PclaimTest=ftb`,
-`-PclaimTest=opac`, `-PclaimTest=both` or `-PbackupTest=true` to the run task.
-
 ## License
 
 LagSense is licensed under the [MIT License](LICENSE).

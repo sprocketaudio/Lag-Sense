@@ -2,8 +2,8 @@ plugins {
     id 'java-library'
     id 'net.neoforged.moddev' version '2.0.148'
 }
-version = '1.0.0-rc.2'
-group = 'audio.sprocket.lagsense'
+version = '1.0.0-rc.3'
+group = 'net.sprocketgames.lagsense'
 base { archivesName = 'lagsense' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 repositories {
@@ -58,7 +58,7 @@ tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
 tasks.register('verifyCore', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
-    mainClass = 'audio.sprocket.lagsense.CoreChecks'
+    mainClass = 'net.sprocketgames.lagsense.CoreChecks'
     if (providers.gradleProperty('auditArchives').isPresent()) systemProperty 'lagsense.audit.archives', providers.gradleProperty('auditArchives').get()
     jvmArgs '--enable-native-access=ALL-UNNAMED'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
@@ -68,7 +68,7 @@ check.dependsOn verifyCore
     tasks.register("verifyProfilingLimits${label}", JavaExec) {
         dependsOn testClasses
         classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
-        mainClass = 'audio.sprocket.lagsense.ProfilingLimitsChecks'
+        mainClass = 'net.sprocketgames.lagsense.ProfilingLimitsChecks'
         maxHeapSize = heap
         javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
     }
@@ -102,7 +102,7 @@ tasks.register('verifyHtmlBrowser', Exec) {
 tasks.register('verifyWorldDisplayGpu', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
-    mainClass = 'audio.sprocket.lagsense.WorldDisplayGpuChecks'
+    mainClass = 'net.sprocketgames.lagsense.WorldDisplayGpuChecks'
     jvmArgs '--enable-native-access=ALL-UNNAMED'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
 }
@@ -111,3 +111,12 @@ tasks.register('verifyWorldDisplayGpu', JavaExec) {
 tasks.named('jar') {
     from('LICENSE') { into 'META-INF' }
 }
+
+tasks.register('verifyReleaseHardening', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'net.sprocketgames.lagsense.ReleaseHardeningChecks'
+    if (providers.gradleProperty('hardeningBenchmark').isPresent()) args 'benchmark'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+check.dependsOn verifyReleaseHardening
