@@ -53,7 +53,7 @@ final class ChunkGroupingUiChecks {
                 for(var state:states)for(var category:((Map<?,?>)field(state,"categories")).values())for(var group:(List<ProfileResults.Group>)field(category,"groups"))((Set<String>)field(category,"expandedTypes")).add(group.type().registry());
                 var expanded=rows(screen);check(expanded.entries.size()==report.chunks().size()+categoryCount+typeCount+report.entries().size(),"Expanded hierarchy includes each target exactly once");
                 var list=new UiScrollList(screen.margin(),144,screen.contentWidth(),24,new ListScroll());list.virtual(expanded.entries,null);var root=(UiRow)list.children().getFirst();
-                check(root.getMessage().getString().contains("Chunk -1, -1")&&root.getMessage().getString().contains("targets"),"Chunk roots retain coordinates and measured target count");
+                check(root.getMessage().getString().contains("Chunk -1, -1 (")&&!root.getMessage().getString().contains(" · "),"Chunk roots retain coordinates and measured target count");
                 int leaf=-1;for(int i=0;i<expanded.entries.size();i++)if(expanded.entries.get(i).key() instanceof List<?> key&&key.getLast() instanceof ProfileResults.Target){leaf=i;break;}
                 check(leaf>=0,"Nested target row exists");var key=(List<?>)expanded.entries.get(leaf).key();var measured=(ProfileResults.Target)key.getLast();
                 check(report.entries().get(measured.index())==measured.entry(),"Nested target retains its original teleport index");

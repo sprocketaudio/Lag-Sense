@@ -29,7 +29,7 @@ public final class ReportScreen extends LagScreen {
     private final Map<ProfileResults.Chunk,Long> chunkUpdates;
     private record Row(Report.Entry target, int index, boolean chunk, double micros, long count,long updates) {
         Row(Report.Entry target,int index,boolean chunk,double micros,long count){this(target,index,chunk,micros,count,count);}
-        String title(){return chunk?"Chunk "+(target.x()>>4)+", "+(target.z()>>4)+" · "+count+" targets":TargetDetails.name(target);}
+        String title(){return chunk?GroupHeading.format("Chunk "+(target.x()>>4)+", "+(target.z()>>4),count):TargetDetails.name(target);}
         String detail(){return chunk?target.dimension()+" | "+count+" measured targets":target.kind()+" | "+target.dimension()+" | "+target.x()+" "+target.y()+" "+target.z();}
     }
     private List<Row> visible = List.of();
@@ -170,7 +170,7 @@ public final class ReportScreen extends LagScreen {
             out.lazy(group.type(),row->appendGroup(row,group,0));if(!expandedTypes.contains(group.type()))continue;
             for(var chunk:typeChunks.getOrDefault(group.type(),List.of())){
                 var id=new TypeChunk(group.type(),chunk.chunk());boolean open=expandedTypeChunks.contains(id);double cost=chunk.micros(report.ticks());
-                out.lazy(id,row->row.row(id,UiResults.branch("Chunk "+chunk.chunk().x()+", "+chunk.chunk().z()+" ("+chunk.count()+")",open),"",UiResults.cost(cost),TimingSeverity.color(cost),12,open,chunk.chunk().dimension(),()->{if(!expandedTypeChunks.add(id))expandedTypeChunks.remove(id);rebuildWidgets();}));
+                out.lazy(id,row->row.row(id,UiResults.branch(GroupHeading.format("Chunk "+chunk.chunk().x()+", "+chunk.chunk().z(),chunk.count()),open),"",UiResults.cost(cost),TimingSeverity.color(cost),12,open,chunk.chunk().dimension(),()->{if(!expandedTypeChunks.add(id))expandedTypeChunks.remove(id);rebuildWidgets();}));
                 if(open)for(var target:chunk.targets())appendTarget(out,target,travel,List.of(id,target.index()),24);
             }
             for(var target:group.targets())if(!HistoricalTargets.positioned(target.entry()))appendTarget(out,target,travel,List.of(group.type(),target.index()),12);
@@ -194,7 +194,7 @@ public final class ReportScreen extends LagScreen {
     }
     private void appendTarget(UiResults out,ProfileResults.Target target,boolean travel,Object id,int indent){var item=new Row(target.entry(),target.index(),false,target.entry().micros(report.ticks()),target.entry().calls());out.lazy(id,row->appendRow(row,item,travel,id,indent));}
     private void appendMod(UiResults out,ProfileResults.ModGroup mod){
-        boolean open=expandedMods.contains(mod.owner());double cost=mod.micros(report.ticks());out.copy(()->new ResultText(ModNames::name).mod(mod,report.ticks(),byType));out.row("mod:"+mod.owner(),UiResults.branch(ModNames.name(mod.owner()),open),"",UiResults.cost(cost),TimingSeverity.color(cost),0,open,mod.owner()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(cost),()->{if(!expandedMods.add(mod.owner()))expandedMods.remove(mod.owner());rebuildWidgets();});
+        boolean open=expandedMods.contains(mod.owner());double cost=mod.micros(report.ticks());out.copy(()->new ResultText(ModNames::name).mod(mod,report.ticks(),byType));out.row("mod:"+mod.owner(),UiResults.branch(GroupHeading.format(ModNames.name(mod.owner()),mod.instances()),open),"",UiResults.cost(cost),TimingSeverity.color(cost),0,open,mod.owner()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(cost),()->{if(!expandedMods.add(mod.owner()))expandedMods.remove(mod.owner());rebuildWidgets();});
     }
     private boolean hasExpanded(){if(filter.equals("Chunks"))return visible.stream().filter(Row::chunk).anyMatch(r->contributors.open(report.chunks().get(r.index())));if(byMod)return visibleMods.stream().anyMatch(m->expandedMods.contains(m.owner()));return (byType||byTypeChunk)&&visibleGroups.stream().anyMatch(g->expandedTypes.contains(g.type()));}
     private void collapseAll(){if(filter.equals("Chunks"))contributors.collapseAll(false);else{expandedTypes.clear();expandedMods.clear();expandedTypeChunks.clear();}rebuildWidgets();}
@@ -203,7 +203,7 @@ public final class ReportScreen extends LagScreen {
         String category=filter.equals("All")||filter.equals("Ticks")||filter.equals("Chunks")?" · "+key.kind():"";
         String hint=key.registry()+"\n"+key.kind()+" | "+group.instances()+" measured instances\n"+group.updates()+" updates | "+UiResults.cost(cost);
         out.copy(()->new ResultText(ModNames::name).type(group,report.ticks()));
-        out.row(key,UiResults.branch(key.registry()+" ("+group.instances()+")"+category,open),"",UiResults.cost(cost),TimingSeverity.color(cost),indent,open,hint,()->{if(!expandedTypes.add(key))expandedTypes.remove(key);rebuildWidgets();});
+        out.row(key,UiResults.branch(GroupHeading.format(key.registry(),group.instances())+category,open),"",UiResults.cost(cost),TimingSeverity.color(cost),indent,open,hint,()->{if(!expandedTypes.add(key))expandedTypes.remove(key);rebuildWidgets();});
     }
     private void appendRow(UiResults out,Row item,boolean travel,Object id,int indent){
             var e=item.target();

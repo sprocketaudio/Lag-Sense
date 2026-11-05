@@ -20,7 +20,7 @@ final class TargetActions {
         if(!current.dimension().equals(target.dimension()))return false;
         return target.kind().equals("Chunk")?(current.x()>>4)==(target.x()>>4)&&(current.z()>>4)==(target.z()>>4):current.type().equals(target.type())&&current.x()==target.x()&&current.y()==target.y()&&current.z()==target.z();
     }
-    static void unmark(){LagSenseClient.waypoint=null;LagSenseClient.tracked(null);ClientAccess.request("unmark");}
+    static void unmark(){ClientAccess.clearRecoveryMark();LagSenseClient.waypoint=null;LagSenseClient.tracked(null);ClientAccess.request("unmark");}
     static UiResults.Action markAction(Report.Entry target,Runnable apply){return new UiResults.Action("Mark",()->{if(marked(target))unmark();else apply.run();}).markState(target);}
     static boolean canTravel(ComparisonTargets.Destination destination){
         return destination!=null&&HistoricalTargets.positioned(destination.target())&&permitted(destination.chunk());

@@ -74,6 +74,27 @@ final class PlayerAccessChecks {
             ClientAccess.beginReportLoad();ClientAccess.reset();check(!ClientAccess.reportLoading()&&ClientAccess.reportError().isEmpty(),"Disconnect clears pending loading and errors");
             ClientAccess.accept(new ProfilerStatePayload(available));LagSenseClient.storeReport(full,false,new MarkerIndex(full),true);var deadline=ClientAccess.class.getDeclaredField("deadline");deadline.setAccessible(true);deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();
             check(!ClientAccess.admin()&&!ClientAccess.canReturn()&&LagSenseClient.report==null&&!ClientAccess.allowed(full),"Expired server authorization disables Return and fails closed even without a revocation packet");
+            check(ClientAccess.recovering(),"Lease expiry schedules background recovery without displaying unauthorized data");
+            ClientAccess.accept(new ProfilerStatePayload(available));
+            check(ClientAccess.recovering()&&LagSenseClient.report==null,"A renewed permission grant waits for fresh report data");
+            LagSenseClient.acceptReport(full,false,false,new MarkerIndex(full),true);
+            check(!ClientAccess.recovering()&&LagSenseClient.report==full,"A fresh authorized report restores visual data without opening a screen");
+            LagSenseClient.mark(new ComparisonTargets.Destination(full.id(),full.capturedAt(),0,target,full.ticks(),false));
+            boolean visible=VisualVisibility.visible();if(visible)VisualVisibility.toggle();
+            try{
+                deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();
+                check(LagSenseClient.waypoint==null&&LagSenseClient.report==null,"Expiry clears the rendered mark and report while retaining only an opaque recovery reference");
+                ClientAccess.accept(new ProfilerStatePayload(available));LagSenseClient.acceptReport(full,false,false,new MarkerIndex(full),true);
+                check(LagSenseClient.waypoint.equals(target)&&LagSenseClient.waypointTicks==full.ticks()&&!VisualVisibility.visible(),"Recovery restores the validated mark and captured timing without changing the master visibility override");
+                deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();ClientAccess.accept(new ProfilerStatePayload(available));TargetActions.unmark();LagSenseClient.acceptReport(full,false,false,new MarkerIndex(full),true);
+                check(LagSenseClient.waypoint==null,"An explicit Unmark during recovery cannot be undone by a late report");
+                deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();ClientAccess.accept(new ProfilerStatePayload(available));
+                var newer=new Report(full.id()+1,2000,20,2,true,false,full.entries());LagSenseClient.acceptReport(newer,false,false,new MarkerIndex(newer),true);
+                check(!ClientAccess.recovering()&&LagSenseClient.report==newer&&LagSenseClient.waypoint==null,"A newly delivered capture cancels stale recovery instead of requesting an older report again");
+                deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();state(false,true,0,null);
+                check(!ClientAccess.recovering()&&LagSenseClient.report==null&&LagSenseClient.waypoint==null,"Explicit permission revocation cancels recovery and cannot resurrect a report or mark");
+                ClientAccess.reset();check(!ClientAccess.recovering(),"Disconnect cancels pending recovery");
+            }finally{if(VisualVisibility.visible()!=visible)VisualVisibility.toggle();}
         }finally{for(var value:saved.entrySet())value.getKey().set(null,value.getValue());LagSenseClient.settings=settings;UiTheme.select(theme);}
         System.out.println("Unified player UI checks passed (three permitted tabs, retained History/Settings, read-only empty/history views, server marker grants, role changes, cache/copy/export revocation and lease expiry in all themes).");
     }

@@ -68,6 +68,9 @@ public final class PlayerWorkflowFixture {
                 check(state().marker()!=null,"A partial public area's chunk mark remains valid without granting unrelated targets");
             }
             var grantedMark=state().marker();
+            var refresh=ProfilerUi.class.getDeclaredMethod("refresh",ServerPlayer.class,long.class);refresh.setAccessible(true);
+            refresh.invoke(ui,player,CAPTURE);
+            check(!reports().getLast().open()&&!reports().getLast().archived()&&report().entries().size()==3&&state().marker().equals(grantedMark),"Background recovery rechecks scoped access and restores the same report and mark without opening a screen");
             for(int i:new int[]{-1,scoped.chunks().size(),Integer.MAX_VALUE})chunkMark.invoke(ui,player,CAPTURE,i);
             chunkMark.invoke(ui,player,CAPTURE-1,0);
             check(state().marker().equals(grantedMark),"Forged chunk indexes and stale capture IDs cannot replace a valid scoped mark");

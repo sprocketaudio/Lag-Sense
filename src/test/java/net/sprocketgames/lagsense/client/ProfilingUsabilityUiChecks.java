@@ -51,6 +51,7 @@ final class ProfilingUsabilityUiChecks {
             check(ProfileLayoutChecks.dropdown(tasks,"Group").value().equals("mod"),"Events retains its By mod default in the Group dropdown");
             ChunkGroupingUiChecks.run();
             Rc5UiChecks.run();
+            GroupHeadingChecks.run();
             TooltipCleanupChecks.run();
             MapInteractionChecks.run();
             HistoryComparisonUiChecks.run();

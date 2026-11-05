@@ -3,7 +3,7 @@ loaderVersion="[1,)"
 license="MIT"
 [[mods]]
 modId="lagsense"
-version="1.0.0-rc.5"
+version="1.0.0"
 displayName="LagSense"
 authors="sprocketaudio"
 description='''In-game lag profiles, reports and visual hotspots.'''

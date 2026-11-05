@@ -12,7 +12,7 @@ final class ProfileStateChecks {
     private static void set(Object target,String name,Object value)throws Exception{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);f.set(target,value);}
     static void run()throws Exception{
         var saved=new HashMap<java.lang.reflect.Field,Object>();
-        for(String name:List.of("report","archived","completeReport","selected","waypoint","waypointTicks","waypointSource","waypointIndex","trackedEntity","trackingStatus","markerIndex","settings")){var f=LagSenseClient.class.getDeclaredField(name);f.setAccessible(true);saved.put(f,f.get(null));}
+        for(String name:List.of("report","archived","completeReport","selected","waypoint","waypointTicks","waypointSource","waypointIndex","trackedEntity","trackingStatus","markerIndex","settings","markReference")){var f=LagSenseClient.class.getDeclaredField(name);f.setAccessible(true);saved.put(f,f.get(null));}
         var oldTheme=UiTheme.current();var config=FMLPaths.class.getDeclaredField("absolutePath");config.setAccessible(true);var oldConfig=config.get(FMLPaths.CONFIGDIR);var directory=Files.createTempDirectory("lagsense-profile-state-");config.set(FMLPaths.CONFIGDIR,directory);
         try{
             LagSenseClient.settings=new OverlaySettings();LagSenseClient.settings.enabled=true;

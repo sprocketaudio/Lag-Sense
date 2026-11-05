@@ -146,7 +146,7 @@ public final class DiscordDelivery implements AutoCloseable {
             private HttpClient client;
             @Override public Response send(URI target, DiscordMessage.Body body) throws Exception {
             if (client == null) client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
-            var request = HttpRequest.newBuilder(target).timeout(Duration.ofSeconds(10)).header("Content-Type", body.contentType()).header("User-Agent", "LagSense/1.0-RC5")
+            var request = HttpRequest.newBuilder(target).timeout(Duration.ofSeconds(10)).header("Content-Type", body.contentType()).header("User-Agent", "LagSense/1.0")
                 .POST(body.publisher()).build();
             var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             try (var stream = response.body()) {

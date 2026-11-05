@@ -17,8 +17,15 @@ public final class ClientAccess {
     private static boolean reportLoading;
     private static long reportProgress;
     private static String reportError="";
+    private static long recoveryReport,recoveryAttempt;
+    private static int recoveryAttempts;
+    private static LagSenseClient.MarkReference recoveryMark;
+    private static boolean recoveryMarkCleared;
+    static void clearRecoveryMark(){if(recovering())recoveryMarkCleared=true;}
+    static boolean recovering(){return recoveryReport!=0;}
+    private static void clearRecovery(){recoveryReport=0;recoveryAttempt=0;recoveryAttempts=0;recoveryMark=null;recoveryMarkCleared=false;}
     static void enable(){enabled=true;reset();}
-    static void reset(){state=null;deadline=0;scoped=null;scopedMarkers=null;lastRequest=0;openQueued=false;completeReportLoad();epoch++;}
+    static void reset(){clearRecovery();state=null;deadline=0;scoped=null;scopedMarkers=null;lastRequest=0;openQueued=false;completeReportLoad();epoch++;}
     static void beginReportLoad(){reportLoading=true;reportError="";reportProgress=System.nanoTime();}
     static void completeReportLoad(){reportLoading=false;reportError="";reportProgress=0;}
     static void failReportLoad(){if(reportLoading){reportLoading=false;reportError="Could not load profile.";}}
@@ -34,7 +41,7 @@ public final class ClientAccess {
     static boolean request(String action){return request(new ProfilerRequest(action));}
     static boolean request(ProfilerRequest request){
         var mc=Minecraft.getInstance();if(mc==null||mc.player==null||mc.getConnection()==null||!NetworkRegistry.hasChannel(mc.getConnection(),ProfilerRequest.TYPE.id()))return false;
-        if(request.action().equals("open"))beginReportLoad();
+        if(request.action().equals("open")){clearRecovery();beginReportLoad();}
         long now=System.nanoTime();if(request.action().equals("open")&&now-lastRequest<350_000_000L){openQueued=true;return true;}
         ClientPacketDistributor.sendToServer(request);lastRequest=now;if(request.action().equals("open"))openQueued=false;return true;
     }
@@ -49,7 +56,7 @@ public final class ClientAccess {
         if(value.open()&&value.report()==0)completeReportLoad();
         else if(reportLoading&&value.message()!=null&&!value.message().isBlank())failReportLoad();
         if(value.clear()||before&&!value.admin())invalidate(!value.open());
-        else if(!value.admin()&&previous!=value.report())invalidate(false);
+        else if(!value.admin()&&previous!=value.report()&&recoveryReport!=value.report())invalidate(false);
         var mc=Minecraft.getInstance();
         if(value.markerChanged()&&!value.clear()){
             LagSenseClient.serverMark(value);
@@ -60,16 +67,24 @@ public final class ClientAccess {
         if(value.message()!=null&&!value.message().isBlank())ShortcutBindings.feedback(value.message());
     }
     static void received(Report report,MarkerIndex markers){completeReportLoad();if(!report.admin()){scoped=report;scopedMarkers=markers;}}
+    static void recovered(Report report){if(recoveryReport==0)return;if(recoveryReport==report.id()&&allowed(report)&&!recoveryMarkCleared)LagSenseClient.restoreMark(report,recoveryMark,state);clearRecovery();}
     static MarkerIndex markers(Report report){return allowed(report)&&scoped!=null&&scoped.id()==report.id()?scopedMarkers:null;}
     static Report scopedReport(){return valid()?scoped:null;}
     static MarkerIndex scopedIndex(){return valid()?scopedMarkers:null;}
     static void tick(){
         if(reportLoading&&System.nanoTime()-reportProgress>60_000_000_000L)failReportLoad();
         if(openQueued&&System.nanoTime()-lastRequest>=350_000_000L)request("open");
-        if(enabled&&state!=null&&System.nanoTime()>=deadline){failReportLoad();state=null;invalidate(true);return;}
+        if(enabled&&state!=null&&System.nanoTime()>=deadline){
+            long capture=LagSenseClient.report==null?0:LagSenseClient.report.id();var mark=LagSenseClient.markReference();
+            failReportLoad();state=null;invalidate(true);recoveryReport=capture;recoveryMark=mark;return;
+        }
+        if(recoveryReport!=0&&valid()&&recoveryAttempts<3&&(recoveryAttempts==0||System.nanoTime()-recoveryAttempt>=30_000_000_000L)){
+            if(request(new ProfilerRequest("refresh",recoveryReport,-1))){recoveryAttempt=System.nanoTime();recoveryAttempts++;}
+        }
         var mc=Minecraft.getInstance();if(enabled&&mc!=null&&mc.screen instanceof LagScreen screen&&screen.profileNavigation!=null&&!screen.profileNavigation.permitted()){mc.setScreen(new ReportScreen(null,null,false));request("open");}
     }
     private static void invalidate(boolean navigate){
+        clearRecovery();
         epoch++;scoped=null;scopedMarkers=null;LagSenseClient.clearView();
         var mc=Minecraft.getInstance();if(mc!=null&&navigate&&mc.screen instanceof LagScreen screen){screen.selection.clear();mc.setScreen(new ReportScreen(null,null,false));}
     }

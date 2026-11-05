@@ -34,6 +34,7 @@ public final class ProfilerUi implements AutoCloseable {
         if(closed||!requests.allow(p.getUUID(),System.nanoTime()))return;
         switch(request.action()){
             case "open","capture","toggle"->openNow(p);
+            case "refresh"->refresh(p,request.report());
             case "settings"->{renew(p);transport.accept(p,SettingsPayload.view(admin(p),Profiler.settings,Profiler.delivery==null?"Off":Profiler.delivery.summary()));}
             case "captures"->{if(admin(p))Profiler.openSettings(p,"");else error(p,"Operator access required.");}
             case "mark"->mark(p,request.report(),request.index());
@@ -42,6 +43,15 @@ public final class ProfilerUi implements AutoCloseable {
             case "unmark"->{var s=session(p);s.trackingJob++;s.mark=null;state(p,s,false,false,true,"");}
             default->error(p,"Unknown profiler action.");
         }
+    }
+    private void refresh(ServerPlayer player,long capture){
+        var s=session(player);
+        var source=s.view!=null&&s.view.id()==capture?s.view:Profiler.latest!=null&&Profiler.latest.id()==capture?Profiler.latest:null;
+        if(source!=null){if(permitted(player,source))deliver(player,source,false,false);return;}
+        if(Profiler.archives!=null){long job=++s.job;Profiler.archives.readInvestigation(capture,(saved,error)->server.execute(()->{
+            if(!current(player,s,job))return;
+            if(error==null&&saved!=null)deliver(player,saved,false,false);
+        }));}
     }
     private void openNow(ServerPlayer p){
         var s=session(p);s.job++;s.listing=false;

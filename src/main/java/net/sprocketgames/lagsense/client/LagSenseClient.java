@@ -19,6 +19,9 @@ public final class LagSenseClient {
     public static OverlaySettings settings = OverlaySettings.load();
     public static int selected = -1;
     public static Report.Entry waypoint;
+    record MarkReference(long capture,int index,boolean chunk) {}
+    private static MarkReference markReference;
+    static MarkReference markReference(){return waypoint==null?null:markReference;}
     public static int waypointTicks;
     private static Report waypointSource;
     private static MarkerIndex waypointIndex;
@@ -101,6 +104,7 @@ public final class LagSenseClient {
     }
     public static void mark(Report.Entry entry) { waypoint = entry;trackingStatus="locating";trackedEntity=null;waypointTicks=0;waypointSource=null;waypointIndex=null; settings.enabled = true; settings.worldMarkers = true; settings.save(); }
     public static void mark(ComparisonTargets.Destination source){
+        markReference=new MarkReference(source.capture(),source.index(),source.chunk());
         waypoint=source.target();trackingStatus="locating";trackedEntity=null;waypointTicks=source.ticks();
         waypointSource=new Report(source.capture(),source.capturedAt(),source.ticks(),0,false,false,List.of(waypoint));waypointIndex=new MarkerIndex(waypointSource);
         settings.enabled=true;settings.worldMarkers=true;settings.save();
@@ -125,6 +129,7 @@ public final class LagSenseClient {
     }
     public static void drawHud(net.minecraft.client.gui.GuiGraphicsExtractor g, boolean preview) { ProfilerHud.draw(g, preview); }
     static void clearView(){
+        markReference=null;
         report=null;markerIndex=null;archived=false;completeReport=false;waypoint=null;trackedEntity=null;trackingStatus="";waypointIndex=null;waypointSource=null;waypointTicks=0;selected=-1;
         EntityMarkers.clear();FullReports.clear();Investigations.clear();Comparisons.clear();ProfilerHud.clear();
     }
@@ -141,7 +146,7 @@ public final class LagSenseClient {
             waypoint=null;trackedEntity=null;trackingStatus="";waypointTicks=0;waypointSource=null;waypointIndex=null;
         }
         if(VisualVisibility.visible()&&ClientReportPolicy.beganCapture(previous,value,false)&&!settings.enabled){settings.enabled=true;settings.save();}
-        if(ClientReportPolicy.manualCaptureStarted(previous,value,false))VisualVisibility.reset();
+        if(!ClientAccess.recovering()&&ClientReportPolicy.manualCaptureStarted(previous,value,false))VisualVisibility.reset();
     }
     private static void rememberProfileView(){var mc=Minecraft.getInstance();if(mc!=null&&mc.screen instanceof ReportScreen screen)screen.rememberPreferences();}
     static ReportScreen latestReportScreen(){rememberProfileView();return new ReportScreen(null,report,false);}
@@ -150,7 +155,20 @@ public final class LagSenseClient {
         if(!ClientAccess.allowed(value))return;
         if(open)rememberProfileView();
         ClientAccess.received(value,markers);storeReport(value,saved,markers,complete);
+        ClientAccess.recovered(value);
         if(VisualVisibility.visible()&&ClientReportPolicy.restoreHud(open,saved)&&!settings.enabled){settings.enabled=true;settings.save();}
         if(open){var mc=Minecraft.getInstance();var parent=mc.screen instanceof net.minecraft.client.gui.screens.ChatScreen?null:mc.screen;mc.setScreen(new ReportScreen(parent,value,saved));}
+    }
+    static void restoreMark(Report source,MarkReference reference,ProfilerStatePayload.State grant){
+        Report.Entry entry=null;
+        if(reference!=null&&source.admin()&&reference.capture()==source.id()&&reference.index()>=0){
+            if(reference.chunk()){if(source.chunks()!=null&&reference.index()<source.chunks().size())entry=HistoricalTargets.chunk(source.chunks().get(reference.index()));}
+            else if(reference.index()<source.entries().size())entry=source.entries().get(reference.index());
+        }
+        if(entry==null&&grant!=null&&grant.report()==source.id())entry=grant.marker();
+        if(!HistoricalTargets.positioned(entry))return;
+        waypoint=entry;waypointTicks=source.ticks();markReference=reference;trackingStatus="locating";
+        waypointSource=new Report(source.id(),source.capturedAt(),source.ticks(),0,false,false,List.of(entry));waypointIndex=new MarkerIndex(waypointSource);
+        if(grant!=null){tracked(grant.trackedEntity());trackingStatus(grant);}
     }
 }

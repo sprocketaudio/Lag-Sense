@@ -130,15 +130,15 @@ final class ChunkBranches {
             category.prepare(byCount,byType,byMod,query);
             if(!query.isBlank()&&category.sorted.isEmpty()&&category.targets.size()>=available)continue;
             long nanos=query.isBlank()?summary.nanos():category.filteredNanos;
-            int count=query.isBlank()?summary.targets():category.filteredCount;
+            int count=query.isBlank()&&category.targets.size()<available?summary.targets():category.filteredCount;
             double cost=nanos/1000.0/Math.max(1,state.data.ticks());
             out.copy(()->categoryCopy(key,summary.kind()));
-            out.row(id,UiResults.branch(categoryName(summary.kind()),category.open),count+" measured targets",UiResults.cost(cost),TimingSeverity.color(cost),indent,category.open,
+            out.row(id,UiResults.branch(GroupHeading.format(categoryName(summary.kind()),count),category.open),count+" measured targets",UiResults.cost(cost),TimingSeverity.color(cost),indent,category.open,
                 summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+count+" measured targets | "+(query.isBlank()?summary.calls():category.filteredCalls)+" updates\n"+UiResults.cost(cost),()->{category.open=!category.open;changed();});
             if(!category.open)continue;
             if(byMod)for(var mod:category.mods){
                 var modKey=new ModKey(id,mod.owner());boolean open=category.expandedMods.contains(mod.owner());
-                out.lazy(modKey,row->{double micros=mod.micros(state.data.ticks());row.copy(()->modCopy(key,summary.kind(),mod.owner()));row.row(modKey,UiResults.branch(ModNames.name(mod.owner()),open),"",UiResults.cost(micros),TimingSeverity.color(micros),indent+12,open,mod.owner()+"\n"+summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(micros),()->{if(!category.expandedMods.add(mod.owner()))category.expandedMods.remove(mod.owner());changed();});});
+                out.lazy(modKey,row->{double micros=mod.micros(state.data.ticks());row.copy(()->modCopy(key,summary.kind(),mod.owner()));row.row(modKey,UiResults.branch(GroupHeading.format(ModNames.name(mod.owner()),mod.instances()),open),"",UiResults.cost(micros),TimingSeverity.color(micros),indent+12,open,mod.owner()+"\n"+summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(micros),()->{if(!category.expandedMods.add(mod.owner()))category.expandedMods.remove(mod.owner());changed();});});
                 if(!open)continue;
                 if(byType)for(var group:mod.types())type(out,key,state,category,id,group,indent+24);
                 else for(var target:mod.targets())target(out,List.of(modKey,target),target,state.data.ticks(),indent+24);
@@ -155,7 +155,7 @@ final class ChunkBranches {
     }
     private void type(UiResults out,Key key,Chunk state,Category category,More id,ProfileResults.Group group,int indent){
         var typeKey=new TypeKey(id,group.type().registry());boolean open=category.expandedTypes.contains(group.type().registry());
-        out.lazy(typeKey,row->{double micros=group.micros(state.data.ticks());row.copy(()->typeCopy(key,id.category(),group.type().registry()));row.row(typeKey,UiResults.branch(group.type().registry()+" ("+group.instances()+")",open),"",UiResults.cost(micros),TimingSeverity.color(micros),indent,open,group.type().registry()+"\n"+id.category()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+group.instances()+" measured instances | "+group.updates()+" updates | "+UiResults.cost(micros),()->{if(!category.expandedTypes.add(group.type().registry()))category.expandedTypes.remove(group.type().registry());changed();});});
+        out.lazy(typeKey,row->{double micros=group.micros(state.data.ticks());row.copy(()->typeCopy(key,id.category(),group.type().registry()));row.row(typeKey,UiResults.branch(GroupHeading.format(group.type().registry(),group.instances()),open),"",UiResults.cost(micros),TimingSeverity.color(micros),indent,open,group.type().registry()+"\n"+id.category()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+group.instances()+" measured instances | "+group.updates()+" updates | "+UiResults.cost(micros),()->{if(!category.expandedTypes.add(group.type().registry()))category.expandedTypes.remove(group.type().registry());changed();});});
         if(open)for(var target:group.targets())target(out,List.of(typeKey,target),target,state.data.ticks(),indent+12);
     }
     private void target(UiResults out,Object rowKey,ProfileResults.Target measured,int ticks,int indent){
