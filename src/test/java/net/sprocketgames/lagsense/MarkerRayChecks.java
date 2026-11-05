@@ -7,9 +7,9 @@ final class MarkerRayChecks {
     static void run(){
         var ray=new MarkerRay(Vec3.ZERO,new Vec3(0,0,1));
         check(ray.intersection(new AABB(-.5,-.5,3,.5,.5,4))==3,"Unobstructed cube intersects at its front face");
-        check(ray.intersection(new AABB(-.5,-.5,7.99,.5,.5,8.99))==7.99,"Intersection distance, not centre distance, sets the eight-block limit");
-        check(ray.intersection(new AABB(-.5,-.5,8,.5,.5,9))==8,"Exactly eight blocks is included");
-        check(!Double.isFinite(ray.intersection(new AABB(-.5,-.5,8.000001,.5,.5,9))),"Anything beyond eight blocks is excluded");
+        check(ray.intersection(new AABB(-.5,-.5,15.99,.5,.5,16.99))==15.99,"Intersection distance, not centre distance, sets the sixteen-block limit");
+        check(ray.intersection(new AABB(-.5,-.5,16,.5,.5,17))==16,"Exactly sixteen blocks is included");
+        check(!Double.isFinite(ray.intersection(new AABB(-.5,-.5,16.000001,.5,.5,17))),"Anything beyond sixteen blocks is excluded");
         check(!Double.isFinite(ray.intersection(new AABB(.000001,-.5,3,1,.5,4))),"A narrow miss is not expanded into a hit");
         check(!Double.isFinite(ray.intersection(new AABB(-.5,.000001,3,.5,1,4))),"Parallel ray slabs reject vertical misses");
         check(!Double.isFinite(ray.intersection(new AABB(-.5,-.5,-4,.5,.5,-3))),"Targets behind the viewpoint never focus");
@@ -23,6 +23,6 @@ final class MarkerRayChecks {
             double x=(i%2==0?1:-1)*.00001;var moving=new MarkerRay(new Vec3(x,0,0),new Vec3(-x,0,1));
             check(Double.isFinite(moving.intersection(new AABB(-.5,-.5,3,.5,.5,4))),"Small viewpoint movement and turning keep the same intersected cube");
         }
-        System.out.println("Marker ray checks passed (eight-block intersection range, exact faces/corners, parallel/negative rays, narrow misses, normalisation and stable movement).");
+        System.out.println("Marker ray checks passed (sixteen-block intersection range, exact faces/corners, parallel/negative rays, narrow misses, normalisation and stable movement).");
     }
 }

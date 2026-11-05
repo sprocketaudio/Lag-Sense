@@ -11,19 +11,25 @@ public final class ReportScreen extends LagScreen {
     private int top;
     private String emptyTab="Targets";
     private String emptyState="";
-    private boolean byCount, byType,byMod;
+    private boolean byCount, byType,byMod,byTypeChunk,byTargets;
+    private String chunkCategory="All";
+    private long filteredUpdates(Row row){return row.updates();}
+    private final Map<ProfileResults.Type,List<ChunkResultGroups.Group>> typeChunks=new HashMap<>();
+    private record TypeChunk(ProfileResults.Type type,ProfileResults.Chunk chunk) {}
+    private final Set<TypeChunk> expandedTypeChunks=new HashSet<>();
     private String filter = "All", dimension = "All", note = "", query="",previousCategory="All";
     private record ViewState(int offset) {}
     private final Map<String,ViewState> views = new HashMap<>();
-    private record VisibleKey(String dimension,boolean byCount,boolean byType,boolean byMod,String query) {}
-    private record VisibleRows(VisibleKey key, List<Row> rows, List<ProfileResults.Group> groups,List<ProfileResults.ModGroup> mods) {}
+    private record VisibleKey(String dimension,boolean byCount,boolean byType,boolean byMod,String query,String category,boolean typeChunk,boolean targets) {}
+    private record VisibleRows(VisibleKey key, List<Row> rows, List<ProfileResults.Group> groups,List<ProfileResults.ModGroup> mods,Map<ProfileResults.Type,List<ChunkResultGroups.Group>> typeChunks) {}
     private final Map<String,VisibleRows> results = new HashMap<>();
     private final Set<ProfileResults.Type> expandedTypes=new HashSet<>();
     private final Set<String> expandedMods=new HashSet<>();
     private final Map<ProfileResults.Chunk,Integer> chunkCounts;
     private final Map<ProfileResults.Chunk,Long> chunkUpdates;
-    private record Row(Report.Entry target, int index, boolean chunk, double micros, long count) {
-        String title(){return chunk?"Chunk "+(target.x()>>4)+", "+(target.z()>>4)+" · "+count+" targets":target.type();}
+    private record Row(Report.Entry target, int index, boolean chunk, double micros, long count,long updates) {
+        Row(Report.Entry target,int index,boolean chunk,double micros,long count){this(target,index,chunk,micros,count,count);}
+        String title(){return chunk?"Chunk "+(target.x()>>4)+", "+(target.z()>>4)+" · "+count+" targets":TargetDetails.name(target);}
         String detail(){return chunk?target.dimension()+" | "+count+" measured targets":target.kind()+" | "+target.dimension()+" | "+target.x()+" "+target.y()+" "+target.z();}
     }
     private List<Row> visible = List.of();
@@ -43,12 +49,13 @@ public final class ReportScreen extends LagScreen {
     @Override public void removed(){rememberPreferences();super.removed();}
     void rememberPreferences(){
         if(report==null)return;
-        var value=new ResultViewSettings(filter,dimension,(byMod?"mod-":"")+(byType?"type":"instance"),byCount?"count":"time",query,filter.equals("Chunks")?previousCategory:filter);
+        var value=new ResultViewSettings(filter,dimension,byTypeChunk&&!filter.equals("Chunks")?"type-chunk":(byMod?"mod-":"")+(byType?"type":"instance"),byTargets&&filter.equals("Chunks")?"targets":byCount?"count":"time",query,filter.equals("Chunks")?previousCategory:filter,chunkCategory);
         if(!value.equals(LagSenseClient.settings.results)){LagSenseClient.settings.results=value;LagSenseClient.settings.save();}
     }
     private void restorePreferences(){
         var value=LagSenseClient.settings.results;if(value==null)value=ResultViewSettings.defaults();
         filter=value.category();previousCategory=value.targetCategory();
+        chunkCategory=value.chunkCategory();byTypeChunk=value.group().equals("type-chunk");byTargets=value.sort().equals("targets");
         dimension=value.dimension();byMod=value.group().startsWith("mod-");byType=value.group().endsWith("type");byCount=value.sort().equals("count");query=value.search();
         if(report!=null&&!dimension.equals("All")&&report.entries().stream().noneMatch(e->e.dimension().equals(dimension))&&(report.chunks()==null||report.chunks().stream().noneMatch(c->c.dimension().equals(dimension))))dimension="All";
     }
@@ -95,7 +102,7 @@ public final class ReportScreen extends LagScreen {
         refreshRows();
         copyButton(this::copySelected);
         var export=action("Export",margin()+Math.max(44,UiFonts.labelWidth("Copy")+12)+4,footer(),48,()->minecraft.setScreen(new ExportScreen(this,report,archived)));
-        var unmark=action("Unmark",export.getX()+export.getWidth()+4,footer(),50,()->{LagSenseClient.waypoint=null;LagSenseClient.tracked(null);ClientAccess.request("unmark");});
+        var unmark=action("Unmark",export.getX()+export.getWidth()+4,footer(),50,TargetActions::unmark);
         if(report.admin())action("Return",unmark.getX()+unmark.getWidth()+4,footer(),48,()->{if(TargetActions.canReturn()&&minecraft.player!=null)minecraft.player.connection.sendCommand("lagsense return");}).enabledWhen(TargetActions::canReturn).visibleWhen(()->TargetActions.permitted(false));
         action("Close", width - margin() - 54, footer(), 54, this::onClose);
         note=ReportCompleteness.label(report);
@@ -106,28 +113,30 @@ public final class ReportScreen extends LagScreen {
     private void replaceOrMount(UiResults out){if(resultsMounted)replaceResults(out.entries);else{results(top,out.entries,true);resultsMounted=true;}}
     private boolean resultsMounted;
     private VisibleKey refreshData(){
-        var key=new VisibleKey(dimension,byCount,byType,byMod,query);
+        var key=new VisibleKey(dimension,byCount,byType,byMod,query,chunkCategory,byTypeChunk,byTargets);
         var cached=results.get(filter);
         if (cached==null || !cached.key().equals(key)) {
         var list = new ArrayList<Row>();
         var groups=List.<ProfileResults.Group>of();
         var mods=List.<ProfileResults.ModGroup>of();
-        if((byType||byMod)&&!filter.equals("Chunks")){
+        if((byType||byMod||byTypeChunk)&&!filter.equals("Chunks")){
             var targets=ProfileResults.targets(report,new ProfileResults.Filter(filter,dimension,false,"",0,0,0),byCount).stream().filter(t->query.isBlank()||searchMatches(t.entry())).toList();
-            if(byMod)mods=ProfileResults.mods(targets,byCount,byType);else groups=ProfileResults.groups(targets,byCount);
+            if(byMod&&!byTypeChunk)mods=ProfileResults.mods(targets,byCount,byType);else groups=ProfileResults.groups(targets,byCount);
+            if(byTypeChunk){typeChunks.clear();for(var group:groups)typeChunks.put(group.type(),ChunkResultGroups.groups(group.targets(),byCount,false));}
         }else if (filter.equals("Chunks")) {
             var chunks = report.chunks() == null ? List.<Report.Chunk>of() : report.chunks();
-            var matchingChunks=query.isBlank()?java.util.Set.<ProfileResults.Chunk>of():report.entries().stream().filter(this::searchMatches).map(e->new ProfileResults.Chunk(e.dimension(),e.x()>>4,e.z()>>4)).collect(java.util.stream.Collectors.toSet());
-            for (int i = 0; i < chunks.size(); i++) { var c = chunks.get(i); boolean matches=query.isBlank()||("Chunk "+c.x()+", "+c.z()+" "+c.dimension()).toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))||matchingChunks.contains(new ProfileResults.Chunk(c.dimension(),c.x(),c.z()));if(matches&&allowChunk(c)) list.add(new Row(c.hotspot(), i, true, c.micros(report.ticks()), chunkCounts.getOrDefault(new ProfileResults.Chunk(c.dimension(),c.x(),c.z()),c.targets()))); }
+            var targets=ProfileResults.targets(report,new ProfileResults.Filter(chunkCategory,dimension,false,"",0,0,0),byCount).stream().filter(t->query.isBlank()||searchMatches(t.entry())).toList();
+            var totals=new HashMap<ProfileResults.Chunk,ChunkResultGroups.Group>();for(var group:ChunkResultGroups.groups(targets,byCount,byTargets))totals.put(group.chunk(),group);
+            for(int i=0;i<chunks.size();i++){var c=chunks.get(i);var total=totals.get(new ProfileResults.Chunk(c.dimension(),c.x(),c.z()));if(total!=null&&allowChunk(c)){var location=HistoricalTargets.chunk(c,null);if(location!=null)list.add(new Row(location,i,true,total.micros(report.ticks()),total.count(),total.updates()));}}
         } else for (int i = 0; i < report.entries().size(); i++) {
             var e = report.entries().get(i);
             if ((filter.equals("All") || e.kind().equals(filter) || filter.equals("Ticks") && (e.kind().startsWith("Scheduled") || e.kind().startsWith("Random"))) && allow(e))
                 list.add(new Row(e, i, false, e.micros(report.ticks()), e.calls()));
         }
-        list.sort(byCount ? Comparator.<Row>comparingLong(r->r.chunk()?chunkUpdates.getOrDefault(new ProfileResults.Chunk(r.target().dimension(),r.target().x()>>4,r.target().z()>>4),0L):r.count()).reversed().thenComparing(Comparator.comparingDouble(Row::micros).reversed()) : Comparator.comparingDouble(Row::micros).reversed());
-                cached=new VisibleRows(key,List.copyOf(list),groups,mods);results.put(filter,cached);
+        list.sort(filter.equals("Chunks")&&byTargets?Comparator.comparingLong(Row::count).reversed().thenComparing(Comparator.comparingDouble(Row::micros).reversed()).thenComparingInt(Row::index):byCount ? Comparator.<Row>comparingLong(r->r.chunk()?filteredUpdates(r):r.count()).reversed().thenComparing(Comparator.comparingDouble(Row::micros).reversed()).thenComparingInt(Row::index) : Comparator.comparingDouble(Row::micros).reversed().thenComparingInt(Row::index));
+                cached=new VisibleRows(key,List.copyOf(list),groups,mods,Map.copyOf(typeChunks));results.put(filter,cached);
         }
-        visible=cached.rows();visibleGroups=cached.groups();visibleMods=cached.mods();
+        visible=cached.rows();visibleGroups=cached.groups();visibleMods=cached.mods();typeChunks.clear();typeChunks.putAll(cached.typeChunks());
         return key;
     }
     private void refreshRows(){
@@ -146,14 +155,26 @@ public final class ReportScreen extends LagScreen {
         var dimensions=new ArrayList<UiDropdown.Choice>();dimensions.add(ProfileControls.choice("All","All"));
         java.util.stream.Stream.concat(report==null?java.util.stream.Stream.empty():report.entries().stream().map(Report.Entry::dimension),report==null||report.chunks()==null?java.util.stream.Stream.empty():report.chunks().stream().map(Report.Chunk::dimension)).distinct().sorted().forEach(d->dimensions.add(ProfileControls.choice(d,d.substring(d.indexOf(':')+1))));
         row.dropdown("Dimension",88,dimensions,dimension,value->{dimension=value;resetResults();rebuildWidgets();});
-        if(!filter.equals("Chunks"))row.dropdown("Category",84,List.of(ProfileControls.choice("All","All"),ProfileControls.choice("Entity","Entities"),ProfileControls.choice("Block","Blocks"),ProfileControls.choice("Ticks","Ticks")),filter,value->{selectView(value);rebuildWidgets();});
-        row.dropdown("Group",100,List.of(ProfileControls.choice("instance","By instance"),ProfileControls.choice("type","By type"),ProfileControls.choice("mod-instance","By mod"),ProfileControls.choice("mod-type","By mod and type")),(byMod?"mod-":"")+(byType?"type":"instance"),value->{byMod=value.startsWith("mod-");byType=value.endsWith("type");resetResults();rebuildWidgets();});
-        row.dropdown("Sort",84,List.of(ProfileControls.choice("time","Most time"),ProfileControls.choice("count","Most updates")),byCount?"count":"time",value->{inline.clear();byCount=value.equals("count");resetResults();rebuildWidgets();});
+        row.dropdown("Category",84,List.of(ProfileControls.choice("All","All"),ProfileControls.choice("Entity","Entities"),ProfileControls.choice("Block","Blocks"),ProfileControls.choice("Ticks","Ticks")),filter.equals("Chunks")?chunkCategory:filter,value->{if(filter.equals("Chunks"))chunkCategory=value;else selectView(value);rebuildWidgets();});
+        var grouping=new ArrayList<>(List.of(ProfileControls.choice("instance","By instance"),ProfileControls.choice("type","By type"),ProfileControls.choice("mod-instance","By mod"),ProfileControls.choice("mod-type","By mod and type")));
+        if(!filter.equals("Chunks"))grouping.add(ProfileControls.choice("type-chunk","By type and chunk"));
+        row.dropdown("Group",100,grouping,byTypeChunk&&!filter.equals("Chunks")?"type-chunk":(byMod?"mod-":"")+(byType?"type":"instance"),value->{byTypeChunk=value.equals("type-chunk");byMod=value.startsWith("mod-");byType=value.endsWith("type");resetResults();rebuildWidgets();});
+        var sorting=new ArrayList<>(List.of(ProfileControls.choice("time","Most time"),ProfileControls.choice("count","Most updates")));if(filter.equals("Chunks"))sorting.add(ProfileControls.choice("targets","Most targets"));
+        row.dropdown("Sort",84,sorting,byTargets&&filter.equals("Chunks")?"targets":byCount?"count":"time",value->{byTargets=value.equals("targets");byCount=value.equals("count");resetResults();rebuildWidgets();});
         int bottom=row.finish();return new UiMetrics.Flow(margin(),width-margin(),bottom-20);
     }
     private void appendResults(UiResults out,boolean travel){
         contributors.mode(byType,byCount,byMod);
-        if(byMod&&!filter.equals("Chunks"))for(var mod:visibleMods){
+        contributors.filter(chunkCategory,query);
+        if(byTypeChunk&&!filter.equals("Chunks"))for(var group:visibleGroups){
+            out.lazy(group.type(),row->appendGroup(row,group,0));if(!expandedTypes.contains(group.type()))continue;
+            for(var chunk:typeChunks.getOrDefault(group.type(),List.of())){
+                var id=new TypeChunk(group.type(),chunk.chunk());boolean open=expandedTypeChunks.contains(id);double cost=chunk.micros(report.ticks());
+                out.lazy(id,row->row.row(id,UiResults.branch("Chunk "+chunk.chunk().x()+", "+chunk.chunk().z()+" ("+chunk.count()+")",open),"",UiResults.cost(cost),TimingSeverity.color(cost),12,open,chunk.chunk().dimension(),()->{if(!expandedTypeChunks.add(id))expandedTypeChunks.remove(id);rebuildWidgets();}));
+                if(open)for(var target:chunk.targets())appendTarget(out,target,travel,List.of(id,target.index()),24);
+            }
+            for(var target:group.targets())if(!HistoricalTargets.positioned(target.entry()))appendTarget(out,target,travel,List.of(group.type(),target.index()),12);
+        }else if(byMod&&!filter.equals("Chunks"))for(var mod:visibleMods){
             out.lazy("mod:"+mod.owner(),row->appendMod(row,mod));
             if(!expandedMods.contains(mod.owner()))continue;
             if(byType)for(var group:mod.types()){
@@ -175,8 +196,8 @@ public final class ReportScreen extends LagScreen {
     private void appendMod(UiResults out,ProfileResults.ModGroup mod){
         boolean open=expandedMods.contains(mod.owner());double cost=mod.micros(report.ticks());out.copy(()->new ResultText(ModNames::name).mod(mod,report.ticks(),byType));out.row("mod:"+mod.owner(),UiResults.branch(ModNames.name(mod.owner()),open),"",UiResults.cost(cost),TimingSeverity.color(cost),0,open,mod.owner()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(cost),()->{if(!expandedMods.add(mod.owner()))expandedMods.remove(mod.owner());rebuildWidgets();});
     }
-    private boolean hasExpanded(){if(filter.equals("Chunks"))return visible.stream().filter(Row::chunk).anyMatch(r->contributors.open(report.chunks().get(r.index())));if(byMod)return visibleMods.stream().anyMatch(m->expandedMods.contains(m.owner()));return byType&&visibleGroups.stream().anyMatch(g->expandedTypes.contains(g.type()));}
-    private void collapseAll(){if(filter.equals("Chunks"))contributors.collapseAll(false);else{expandedTypes.clear();expandedMods.clear();}rebuildWidgets();}
+    private boolean hasExpanded(){if(filter.equals("Chunks"))return visible.stream().filter(Row::chunk).anyMatch(r->contributors.open(report.chunks().get(r.index())));if(byMod)return visibleMods.stream().anyMatch(m->expandedMods.contains(m.owner()));return (byType||byTypeChunk)&&visibleGroups.stream().anyMatch(g->expandedTypes.contains(g.type()));}
+    private void collapseAll(){if(filter.equals("Chunks"))contributors.collapseAll(false);else{expandedTypes.clear();expandedMods.clear();expandedTypeChunks.clear();}rebuildWidgets();}
     private void appendGroup(UiResults out,ProfileResults.Group group,int indent){
         var key=group.type();boolean open=expandedTypes.contains(key);double cost=group.micros(report.ticks());
         String category=filter.equals("All")||filter.equals("Ticks")||filter.equals("Chunks")?" · "+key.kind():"";
@@ -187,7 +208,7 @@ public final class ReportScreen extends LagScreen {
     private void appendRow(UiResults out,Row item,boolean travel,Object id,int indent){
             var e=item.target();
             var actions=new ArrayList<UiResults.Action>();
-            actions.add(new UiResults.Action("Mark",()->{if(item.chunk())LagSenseClient.markChunk(report,report.chunks().get(item.index()),item.index());else LagSenseClient.mark(report,e);minecraft.setScreen(null);}));
+            actions.add(TargetActions.markAction(e,()->{if(item.chunk())LagSenseClient.markChunk(report,report.chunks().get(item.index()),item.index());else LagSenseClient.mark(report,e);}));
             if(travel){var destination=TargetActions.recorded(report,item.chunk()?TargetActions.chunk(report.chunks().get(item.index())):e,item.index(),item.chunk());if(destination!=null)actions.add(TargetActions.actions(this,destination)[1]);}
             Report.Chunk chunk=item.chunk()?report.chunks().get(item.index()):null;
             if(archived){

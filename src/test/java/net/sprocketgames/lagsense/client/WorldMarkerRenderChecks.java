@@ -43,7 +43,7 @@ final class WorldMarkerRenderChecks {
         int[] vertices={0},colours={0},widths={0};
         var vertex=(VertexConsumer)Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(),new Class[]{VertexConsumer.class},(proxy,method,args)->{
             if(method.getName().equals("addVertex"))vertices[0]++;
-            if(method.getName().equals("setColor")){colours[0]++;int alpha=(int)args[0]>>>24;check(alpha>=25&&alpha<=115,"All ordinary outlines remain present at subdued opacity");}
+            if(method.getName().equals("setColor")){colours[0]++;int alpha=(int)args[0]>>>24;check(alpha>=40&&alpha<=133,"All ordinary outlines remain present at subdued opacity");}
             if(method.getName().equals("setLineWidth")){widths[0]++;check(((Number)args[0]).floatValue()==2.5f,"Ordinary outlines use a clearer two-and-a-half-pixel width");}
             return method.getReturnType()==void.class?null:proxy;
         });
@@ -129,7 +129,7 @@ final class WorldMarkerRenderChecks {
         // Ordinary solid terrain cannot occlude this selection: only displayed profiler boxes enter the selector.
         var terrain=new AABB(-1,-1,1,1,1,2);check(new MarkerRay(origin,direction).intersection(terrain)==1&&select.invoke(null,List.of(first),origin,direction)==first,"A profiling cube behind a solid wall remains selectable without consulting vanilla block hits");
         check(select.invoke(null,List.of(),origin,direction)==null,"A hidden, unauthorised, unloaded or below-threshold cube omitted by the displayed-cube list cannot focus");
-        var miss=block(1,0,1,new AABB(.001,-.5,1,1,.5,2));var far=block(0,0,9,new AABB(-.5,-.5,8.001,.5,.5,9));
+        var miss=block(1,0,1,new AABB(.001,-.5,1,1,.5,2));var far=block(0,0,17,new AABB(-.5,-.5,16.001,.5,.5,17));
         check(select.invoke(null,List.of(miss,far),origin,direction)==null,"Narrow misses and out-of-range displayed cubes focus nothing");
         var tie=block(1,0,3,new AABB(-.5,-.5,3,.5,.5,8));
         check(select.invoke(null,List.of(tie,first),origin,direction)==first&&select.invoke(null,List.of(first,tie),origin,direction)==first,"Exact intersection ties have a stable location ordering");

@@ -9,7 +9,7 @@ public final class TargetDetails {
         return e.type()+"\n"+e.kind()+" | "+e.dimension()+" | "+e.x()+" "+e.y()+" "+e.z()+"\nChunk "+(e.x()>>4)+", "+(e.z()>>4)+"\n"+e.calls()+" updates"+(ticks>0?" | "+UiResults.cost(e.micros(ticks)):"");
     }
     public static String name(Report.Entry e) {
-        return e.type();
+        return e.type()+(HistoricalTargets.positioned(e)?" · "+e.x()+", "+e.y()+", "+e.z():"");
     }
     public static void teleport(Screen parent, Report report, Report.Entry e, int index) {
         if(parent instanceof LagScreen screen)TargetActions.teleport(screen,TargetActions.recorded(report,e,index,false));

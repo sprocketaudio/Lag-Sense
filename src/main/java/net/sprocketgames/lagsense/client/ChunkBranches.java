@@ -18,13 +18,17 @@ final class ChunkBranches {
         List<ProfileResults.Group> groups;
         List<ProfileResults.ModGroup> mods;
         boolean modTypes;
+        String cachedQuery="";
+        long filteredNanos,filteredCalls;
+        int filteredCount;
         final Set<String> expandedMods=new HashSet<>();
         final Set<String> expandedTypes=new HashSet<>();
-        void prepare(boolean byCount,boolean byType,boolean byMod){
-            if(cachedSize!=targets.size()||cachedCount!=byCount){
-                cachedSize=targets.size();cachedCount=byCount;groups=null;mods=null;
+        void prepare(boolean byCount,boolean byType,boolean byMod,String query){
+            if(cachedSize!=targets.size()||cachedCount!=byCount||!cachedQuery.equals(query)){
+                cachedSize=targets.size();cachedCount=byCount;cachedQuery=query;groups=null;mods=null;
                 Comparator<ProfileResults.Target> cost=Comparator.comparingLong((ProfileResults.Target t)->t.entry().nanos()).reversed();
-                sorted=targets.stream().map(h->new ProfileResults.Target(h.index(),h.entry())).sorted((byCount?Comparator.comparingLong((ProfileResults.Target t)->t.entry().calls()).reversed().thenComparing(cost):cost).thenComparing(t->t.entry().type()).thenComparingInt(ProfileResults.Target::index)).toList();
+                sorted=targets.stream().filter(h->matches(h.entry(),query)).map(h->new ProfileResults.Target(h.index(),h.entry())).sorted((byCount?Comparator.comparingLong((ProfileResults.Target t)->t.entry().calls()).reversed().thenComparing(cost):cost).thenComparing(t->t.entry().type()).thenComparingInt(ProfileResults.Target::index)).toList();
+                filteredNanos=0;filteredCalls=0;filteredCount=0;for(var group:ProfileResults.groups(sorted,false)){filteredNanos+=group.nanos();filteredCalls+=group.updates();filteredCount+=group.instances();}
             }
             if(byType&&!byMod&&groups==null)groups=ProfileResults.groups(sorted,byCount);
             if(byMod&&(mods==null||modTypes!=byType)){mods=ProfileResults.mods(sorted,byCount,byType);modTypes=byType;}
@@ -45,6 +49,9 @@ final class ChunkBranches {
     private final boolean archived;
     private final Map<Key,Chunk> chunks=new LinkedHashMap<>();
     private boolean byType,byCount,byMod;
+    private String categoryFilter="All",query="";
+    void filter(String category,String search){categoryFilter=category;query=search.toLowerCase(Locale.ROOT);}
+    private static boolean matches(Report.Entry e,String query){return query.isBlank()||(e.type()+" "+e.kind()+" "+e.dimension()+" "+e.x()+" "+e.y()+" "+e.z()+" "+ModNames.name(ProfileResults.owner(e))).toLowerCase(Locale.ROOT).contains(query);}
     ChunkBranches(LagScreen screen,Report report,boolean archived){this.screen=screen;this.report=report;this.archived=archived;}
     void mode(boolean byType,boolean byCount){mode(byType,byCount,false);}
     void mode(boolean byType,boolean byCount,boolean byMod){this.byType=byType;this.byCount=byCount;this.byMod=byMod;}
@@ -111,15 +118,24 @@ final class ChunkBranches {
             out.row(new More(key,""),state.loading?"Loading contributors…":state.error.isBlank()?"Contributors unavailable":state.error,"","",UiTheme.TEXT,indent,false,"Retry loading this chunk.",state.loading?null:()->{load(key,state);changed();});return;
         }
         Comparator<ChunkInvestigation.Category> costOrder=Comparator.comparingLong(ChunkInvestigation.Category::nanos).reversed();
-        var summaries=state.data.categories().stream().sorted((byCount?Comparator.comparingLong(ChunkInvestigation.Category::calls).reversed().thenComparing(costOrder):costOrder).thenComparing(ChunkInvestigation.Category::kind)).toList();
+        var summaries=state.data.categories().stream().map(summary->{
+            if(query.isBlank())return summary;
+            var category=state.categories.computeIfAbsent(summary.kind(),k->new Category());category.prepare(byCount,byType,byMod,query);
+            return new ChunkInvestigation.Category(summary.kind(),category.filteredNanos,category.filteredCalls,category.filteredCount);
+        }).sorted((byCount?Comparator.comparingLong(ChunkInvestigation.Category::calls).reversed().thenComparing(costOrder):costOrder).thenComparing(ChunkInvestigation.Category::kind)).toList();
         for(var summary:summaries){
+            if(!ProfileResults.matches(categoryFilter,summary.kind()))continue;
             var category=state.categories.computeIfAbsent(summary.kind(),k->new Category());var id=new More(key,summary.kind());
-            double cost=summary.nanos()/1000.0/Math.max(1,state.data.ticks());
+            int available=state.data.categories().stream().filter(original->original.kind().equals(summary.kind())).findFirst().orElseThrow().targets();
+            category.prepare(byCount,byType,byMod,query);
+            if(!query.isBlank()&&category.sorted.isEmpty()&&category.targets.size()>=available)continue;
+            long nanos=query.isBlank()?summary.nanos():category.filteredNanos;
+            int count=query.isBlank()?summary.targets():category.filteredCount;
+            double cost=nanos/1000.0/Math.max(1,state.data.ticks());
             out.copy(()->categoryCopy(key,summary.kind()));
-            out.row(id,UiResults.branch(categoryName(summary.kind()),category.open),summary.targets()+" measured targets",UiResults.cost(cost),TimingSeverity.color(cost),indent,category.open,
-                summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+summary.targets()+" measured targets | "+summary.calls()+" updates\n"+UiResults.cost(cost),()->{category.open=!category.open;changed();});
+            out.row(id,UiResults.branch(categoryName(summary.kind()),category.open),count+" measured targets",UiResults.cost(cost),TimingSeverity.color(cost),indent,category.open,
+                summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+count+" measured targets | "+(query.isBlank()?summary.calls():category.filteredCalls)+" updates\n"+UiResults.cost(cost),()->{category.open=!category.open;changed();});
             if(!category.open)continue;
-            category.prepare(byCount,byType,byMod);
             if(byMod)for(var mod:category.mods){
                 var modKey=new ModKey(id,mod.owner());boolean open=category.expandedMods.contains(mod.owner());
                 out.lazy(modKey,row->{double micros=mod.micros(state.data.ticks());row.copy(()->modCopy(key,summary.kind(),mod.owner()));row.row(modKey,UiResults.branch(ModNames.name(mod.owner()),open),"",UiResults.cost(micros),TimingSeverity.color(micros),indent+12,open,mod.owner()+"\n"+summary.kind()+" | "+key.dimension()+"\nChunk "+key.x()+", "+key.z()+"\n"+mod.instances()+" measured targets | "+mod.updates()+" updates | "+UiResults.cost(micros),()->{if(!category.expandedMods.add(mod.owner()))category.expandedMods.remove(mod.owner());changed();});});
@@ -128,9 +144,9 @@ final class ChunkBranches {
                 else for(var target:mod.targets())target(out,List.of(modKey,target),target,state.data.ticks(),indent+24);
             }else if(byType)for(var group:category.groups)type(out,key,state,category,id,group,indent+12);
             else for(var target:category.sorted)target(out,List.of(id,target),target,state.data.ticks(),indent+12);
-            if(category.targets.size()<summary.targets()){
+            if(category.targets.size()<available){
                 String label=category.error.isBlank()?"Loading contributors…":category.error;
-                out.row(List.of(id,"more"),label,category.targets.size()+" of "+summary.targets()+" loaded","",UiTheme.TEXT,indent+12,false,"Load more results for this chunk.",
+                out.row(List.of(id,"more"),label,category.targets.size()+" of "+available+" loaded","",UiTheme.TEXT,indent+12,false,"Load more results for this chunk.",
                     category.loading?null:()->{loadCategory(key,state,summary.kind(),category);changed();});
             }
         }
@@ -149,7 +165,7 @@ final class ChunkBranches {
     }
     UiResults.Action[] actions(Report.Entry target,int index){
         if(archived){var destination=TargetActions.recorded(report,target,index,false);return destination==null?new UiResults.Action[0]:TargetActions.actions(screen,destination);}
-        var mark=new UiResults.Action("Mark",()->{LagSenseClient.mark(report,target);net.minecraft.client.Minecraft.getInstance().setScreen(null);});
+        var mark=TargetActions.markAction(target,()->LagSenseClient.mark(report,target));
         if(report.admin()&&!archived&&index>=0)return new UiResults.Action[]{mark,TargetActions.actions(screen,TargetActions.recorded(report,target,index,false))[1]};
         return new UiResults.Action[]{mark};
     }
@@ -158,8 +174,8 @@ final class ChunkBranches {
             var state=pair.getValue();if(!state.open||state.data==null)continue;
             for(var summary:state.data.categories()){
                 var category=state.categories.get(summary.kind());
-                if(category==null||!category.open||category.loading||!category.error.isBlank()||category.targets.size()>=summary.targets())continue;
-                if(visible.test(List.of(new More(pair.getKey(),summary.kind()),"more"))){loadCategory(pair.getKey(),state,summary.kind(),category);return;}
+                if(category==null||!ProfileResults.matches(categoryFilter,summary.kind())||!category.open&&query.isBlank()||category.loading||!category.error.isBlank()||category.targets.size()>=summary.targets())continue;
+                if(!query.isBlank()||visible.test(List.of(new More(pair.getKey(),summary.kind()),"more"))){loadCategory(pair.getKey(),state,summary.kind(),category);return;}
             }
         }
     }
@@ -178,7 +194,11 @@ final class ChunkBranches {
         },error->{category.loading=false;category.error=error;if(next!=null)copyFailed(state,error);if(category.afterLoad!=null){category.afterLoad=null;copyFailed(state,error);}changed();});
     }
     private static String categoryName(String kind){return switch(kind){case "Entity"->"Entities";case "Block"->"Ticking blocks";case "Random block"->"Random block updates";case "Random fluid"->"Random fluid updates";case "Scheduled block"->"Scheduled block updates";case "Scheduled fluid"->"Scheduled fluid updates";default->kind;};}
-    String summary(String dimension,int x,int z){return state(new Key(dimension,x,z)).summary;}
+    String summary(String dimension,int x,int z){
+        var chunk=state(new Key(dimension,x,z));if(categoryFilter.equals("All")&&query.isBlank()||chunk.data==null)return chunk.summary;
+        long nanos=0;int count=0;for(var summary:chunk.data.categories()){if(!ProfileResults.matches(categoryFilter,summary.kind()))continue;var category=chunk.categories.get(summary.kind());if(query.isBlank()){nanos+=summary.nanos();count+=summary.targets();}else if(category!=null){if(category.targets.size()<summary.targets())return "Loading matching targets…";category.prepare(byCount,byType,byMod,query);nanos+=category.filteredNanos;count+=category.filteredCount;}}
+        return count+" matching targets | "+UiResults.cost(nanos/1000.0/Math.max(1,chunk.data.ticks()));
+    }
     ChunkInvestigation snapshot(String dimension,int x,int z){
         var chunk=state(new Key(dimension,x,z));if(chunk.data==null)return null;
         var loaded=new ArrayList<ChunkInvestigation.Hotspot>();

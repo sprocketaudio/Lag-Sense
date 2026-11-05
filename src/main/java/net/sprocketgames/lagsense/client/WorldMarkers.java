@@ -184,7 +184,7 @@ final class WorldMarkers {
     static int outlineColor(int color,boolean focused,double distance,double range){
         if(focused)return color;
         double t=Math.clamp(distance/Math.max(1,range),0,1);
-        double opacity=.45-(.45-.10)*t*t*(3-2*t);
+        double opacity=.52-(.52-.16)*t*t*(3-2*t);
         return (Math.max(1,(int)Math.round((color>>>24)*opacity))<<24)|(color&0xffffff);
     }
     void submit(net.minecraft.client.renderer.state.level.LevelRenderState state,PoseStack stack,WorldOverlayDraw collector){

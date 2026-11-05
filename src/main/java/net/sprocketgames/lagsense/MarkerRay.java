@@ -5,7 +5,7 @@ import net.minecraft.world.phys.Vec3;
 
 /** A crosshair ray used only for profiler selection. World terrain never participates. */
 public final class MarkerRay {
-    public static final double RANGE=8;
+    public static final double RANGE=16;
     private final double x,y,z,dx,dy,dz;
     private final boolean valid;
     public MarkerRay(Vec3 origin,Vec3 direction){

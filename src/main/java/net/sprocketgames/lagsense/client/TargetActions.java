@@ -14,12 +14,20 @@ final class TargetActions {
     static boolean permitted(com.mojang.brigadier.CommandDispatcher<?> commands,boolean chunk){return commands.findNode(java.util.List.of("lagsense",chunk?"tpchunk":"tp"))!=null;}
     static boolean canReturn(){return ClientAccess.canReturn()&&permitted(false);}
     private static Entity live(Report.Entry target){return EntityMarkers.current(target);}
+    static boolean marked(Report.Entry target){
+        var current=LagSenseClient.waypoint;if(current==null||target==null||!current.kind().equals(target.kind()))return false;
+        if(current.entityId()!=null||target.entityId()!=null)return current.entityId()!=null&&current.entityId().equals(target.entityId())&&current.type().equals(target.type());
+        if(!current.dimension().equals(target.dimension()))return false;
+        return target.kind().equals("Chunk")?(current.x()>>4)==(target.x()>>4)&&(current.z()>>4)==(target.z()>>4):current.type().equals(target.type())&&current.x()==target.x()&&current.y()==target.y()&&current.z()==target.z();
+    }
+    static void unmark(){LagSenseClient.waypoint=null;LagSenseClient.tracked(null);ClientAccess.request("unmark");}
+    static UiResults.Action markAction(Report.Entry target,Runnable apply){return new UiResults.Action("Mark",()->{if(marked(target))unmark();else apply.run();}).markState(target);}
     static boolean canTravel(ComparisonTargets.Destination destination){
         return destination!=null&&HistoricalTargets.positioned(destination.target())&&permitted(destination.chunk());
     }
     static UiResults.Action[] actions(LagScreen parent,ComparisonTargets.Destination destination){
         return new UiResults.Action[]{
-            new UiResults.Action("Mark",()->{if(destination==null)return;if(!ClientAccess.admin()){if(destination.chunk())ClientAccess.request(new ProfilerRequest("mark_chunk",destination.capture(),destination.index()));else ClientAccess.mark(destination.capture(),destination.target());}else LagSenseClient.mark(destination);var mc=Minecraft.getInstance();if(mc!=null)mc.setScreen(null);}).enabledWhen(()->destination!=null),
+            markAction(destination==null?null:destination.target(),()->{if(destination==null)return;if(!ClientAccess.admin()){if(destination.chunk())ClientAccess.request(new ProfilerRequest("mark_chunk",destination.capture(),destination.index()));else ClientAccess.mark(destination.capture(),destination.target());}else LagSenseClient.mark(destination);}).enabledWhen(()->destination!=null),
             new UiResults.Action("TP",()->teleport(parent,destination)).enabledWhen(()->canTravel(destination)).visibleWhen(()->destination!=null&&permitted(destination.chunk()))
         };
     }

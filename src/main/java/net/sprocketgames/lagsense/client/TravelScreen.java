@@ -22,7 +22,7 @@ public final class TravelScreen extends LagScreen {
     @Override protected int footer(){return panelBottom()-32;}
     @Override protected void init() {
         lines = font.split(UiFonts.rich((locationLabel.isBlank()?"":locationLabel+": ")+target.dimension() + " at " + target.x() + ", " + target.y() + ", " + target.z() + ".\nReturn with /lagsense return."), contentWidth());
-        primary("Teleport", margin(), footer(), 76, () -> { confirm.run(); minecraft.setScreen(parent); }).enabledWhen(()->TargetActions.permitted(target.kind().equals("Chunk"))).visibleWhen(()->TargetActions.permitted(target.kind().equals("Chunk")));
+        primary("Teleport", margin(), footer(), 76, () -> { confirm.run(); minecraft.setScreen(null); }).enabledWhen(()->TargetActions.permitted(target.kind().equals("Chunk"))).visibleWhen(()->TargetActions.permitted(target.kind().equals("Chunk")));
         cancel=action("Cancel", width - margin() - 60, footer(), 60, this::onClose);
     }
     @Override protected void setInitialFocus(){setInitialFocus(cancel);}

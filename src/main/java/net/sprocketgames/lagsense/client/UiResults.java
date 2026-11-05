@@ -6,11 +6,14 @@ import net.minecraft.client.gui.Font;
 
 /** Lightweight row descriptions. Native widgets are only created for the visible window. */
 final class UiResults {
-    record Action(String label, Runnable run, boolean selected,java.util.function.BooleanSupplier enabled,java.util.function.BooleanSupplier visible) {
+    static int markWidth(){return Math.max(36,UiFonts.labelWidth("Unmark")+10);}
+    record Action(String label, Runnable run, boolean selected,java.util.function.BooleanSupplier enabled,java.util.function.BooleanSupplier visible,net.sprocketgames.lagsense.Report.Entry mark) {
+        Action(String label,Runnable run,boolean selected,java.util.function.BooleanSupplier enabled,java.util.function.BooleanSupplier visible){this(label,run,selected,enabled,visible,null);}
         Action(String label, Runnable run) { this(label, run, false,null,null); }
         Action(String label, Runnable run,boolean selected) { this(label,run,selected,null,null); }
-        Action enabledWhen(java.util.function.BooleanSupplier enabled){return new Action(label,run,selected,enabled,visible);}
-        Action visibleWhen(java.util.function.BooleanSupplier visible){return new Action(label,run,selected,enabled,visible);}
+        Action enabledWhen(java.util.function.BooleanSupplier enabled){return new Action(label,run,selected,enabled,visible,mark);}
+        Action visibleWhen(java.util.function.BooleanSupplier visible){return new Action(label,run,selected,enabled,visible,mark);}
+        Action markState(net.sprocketgames.lagsense.Report.Entry target){return new Action(label,run,selected,enabled,visible,target);}
     }
     private final int left, width, reserved, clipTop, clipBottom;
     private final Font font;
@@ -26,7 +29,7 @@ final class UiResults {
         this(screen,top,reserved,footnote,true);
     }
     UiResults(LagScreen screen, int top, int reserved, boolean footnote, boolean compact) {
-        left=screen.margin(); width=screen.contentWidth(); this.reserved=reserved; font=screen.profileFont();
+        left=screen.margin(); width=screen.contentWidth(); this.reserved=reserved==76?markWidth()+40:reserved==48?markWidth()+12:reserved; font=screen.profileFont();
         clipTop=top; clipBottom=screen.footer()-(footnote?32:12);
         this.compact=compact;
     }
@@ -56,8 +59,9 @@ final class UiResults {
             list.add(UiHints.hint(row,hint));
             int x=left+width-reserved+4;
             for(var action:actions) {
-                int w=actions.length==1?reserved-12:action.label().equals("TP")?(compact?28:32):action.label().equals("Mark")?(compact?36:40):action.label().equals("View")?42:76;
+                int w=actions.length==1?reserved-12:action.label().equals("TP")?(compact?28:32):action.label().equals("Mark")?markWidth():action.label().equals("View")?42:76;
                 var button=list.add(UiHints.control(new UiButton(x,y+(compact?3:6),w,compact?16:20,action.label(),action.run()),action.label()));
+                if(action.mark()!=null)button.markState(action.mark());
                 if(action.enabled()!=null)button.enabledWhen(action.enabled());
                 if(action.visible()!=null)button.visibleWhen(action.visible());
                 if(action.selected())button.role(UiButton.Role.TAB).selected(true);

@@ -69,8 +69,8 @@ public final class HeatmapScreen extends LagScreen {
         action("Export",margin()+48,footer(),48,()->minecraft.setScreen(new ExportScreen(this,report,archived)));
         if(archived){
             var destination=selectedDestination();
-            if(destination!=null){var actions=TargetActions.actions(this,destination);int x=margin()+100;for(var item:actions){action(item.label(),x,footer(),item.label().equals("Mark")?48:36,item.run()).enabledWhen(item.enabled()).visibleWhen(item.visible()==null?()->true:item.visible());x+=item.label().equals("Mark")?52:40;}}
-        }else action("Mark",margin()+100,footer(),48,()->{if(selected!=null&&selected.hotspot()!=null){var destination=selectedDestination();if(destination!=null){if(report.admin())LagSenseClient.mark(destination);else ClientAccess.request(new ProfilerRequest("mark_chunk",report.id(),destination.index()));}minecraft.setScreen(null);}}).active=selected!=null&&selected.hotspot()!=null;
+            if(destination!=null){var actions=TargetActions.actions(this,destination);int x=margin()+100;for(var item:actions){var button=action(item.label(),x,footer(),item.label().equals("Mark")?48:36,item.run()).enabledWhen(item.enabled()).visibleWhen(item.visible()==null?()->true:item.visible());if(item.mark()!=null)button.markState(item.mark());x+=item.label().equals("Mark")?52:40;}}
+        }else{var destination=selectedDestination();if(destination!=null){var mark=TargetActions.actions(this,destination)[0];action("Mark",margin()+100,footer(),48,mark.run()).markState(destination.target());}}
         action("Close",width-margin()-54,footer(),54,this::onClose);
     }
     private ComparisonTargets.Destination selectedDestination(){

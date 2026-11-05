@@ -26,6 +26,9 @@ public class UiButton extends Button {
     private Role role = Role.SECONDARY;
     private boolean selected, on;
     private boolean strongText;
+    private java.util.function.Supplier<String> liveLabel;
+    private java.util.function.BooleanSupplier liveSelected;
+    public UiButton markState(net.sprocketgames.lagsense.Report.Entry target){liveLabel=()->TargetActions.marked(target)?"Unmark":"Mark";liveSelected=()->TargetActions.marked(target);return this;}
     private java.util.function.BooleanSupplier enabledWhen,visibleWhen;
     private long pressedUntil;
     public UiButton(int x, int y, int w, int h, String label, Runnable run) {
@@ -38,11 +41,12 @@ public class UiButton extends Button {
     public UiButton strongText(){strongText=true;return this;}
     UiButton enabledWhen(java.util.function.BooleanSupplier condition){enabledWhen=condition;active=condition.getAsBoolean();return this;}
     UiButton visibleWhen(java.util.function.BooleanSupplier condition){visibleWhen=condition;visible=condition.getAsBoolean();return this;}
-    void refreshAvailability(){if(enabledWhen!=null)active=enabledWhen.getAsBoolean();if(visibleWhen!=null)visible=visibleWhen.getAsBoolean();}
+    void refreshAvailability(){if(enabledWhen!=null)active=enabledWhen.getAsBoolean();if(visibleWhen!=null)visible=visibleWhen.getAsBoolean();if(liveLabel!=null)setMessage(Component.literal(liveLabel.get()));if(liveSelected!=null)selected=liveSelected.getAsBoolean();}
     static void refreshAvailability(net.minecraft.client.gui.components.events.ContainerEventHandler container){for(var child:container.children()){if(child instanceof UiButton button)button.refreshAvailability();if(child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler nested)refreshAvailability(nested);}}
     static boolean highlighted(boolean hovered,boolean focused,boolean keyboard){return hovered||focused&&keyboard;}
     @Override public void onPress(InputWithModifiers input) { refreshAvailability();if(!active||!visible)return;pressedUntil = System.nanoTime() + 90_000_000; super.onPress(input); }
     @Override protected void extractContents(GuiGraphicsExtractor g, int mx, int my, float partial) {
+        if(liveLabel!=null)setMessage(Component.literal(liveLabel.get()));if(liveSelected!=null)selected=liveSelected.getAsBoolean();
         if(enabledWhen!=null)active=enabledWhen.getAsBoolean();
         var font = strongText || role == Role.TAB || role == Role.PRIMARY ? UiFonts.strong() : UiFonts.body(); int x = getX(), y = getY(), w = getWidth(), h = getHeight();
         boolean hover = highlighted(isHovered(),isFocused(),isFocused()&&Minecraft.getInstance().getLastInputType().isKeyboard());

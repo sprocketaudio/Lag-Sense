@@ -98,7 +98,7 @@ public final class CallPathExpansionChecks {
         }
         for(String kind:List.of("Entity","Block","Scheduled block","Random block","Scheduled fluid","Random fluid")) {
             var target=new net.sprocketgames.lagsense.Report.Entry(kind,"minecraft:creeper","minecraft:overworld",1,64,2,1,1);
-            if(!TargetDetails.name(target).equals(target.type()))throw new AssertionError("Target names must retain their complete registry IDs");
+            if(!TargetDetails.name(target).equals(target.type()+" · 1, 64, 2"))throw new AssertionError("Target names must retain their complete registry IDs");
         }
     }
     private static void compactRows(CpuInvestigation data,Font font) {

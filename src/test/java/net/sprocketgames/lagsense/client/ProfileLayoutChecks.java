@@ -29,12 +29,12 @@ final class ProfileLayoutChecks {
                 for(int i=1;i<footerButtons.size();i++){var before=footerButtons.get(i-1);var after=footerButtons.get(i);check(after.getX()-before.getX()-before.getWidth()==4&&after.getY()==before.getY(),"Left footer buttons keep the same four-pixel gap with native label widths");}
 
                 layout(targets,"Targets");check(dropdown(targets,"Category").choices().stream().map(UiDropdown.Choice::id).toList().equals(List.of("All","Entity","Block","Ticks")),"Targets retains all original category filters");
-                check(dropdown(targets,"Group").choices().size()==4,"Both mod and type grouping combinations remain available");
+                check(dropdown(targets,"Group").choices().size()==5,"Both mod and type grouping combinations remain available");
                 var input=widgets(targets).stream().filter(UiInput.class::isInstance).map(UiInput.class::cast).findFirst().orElseThrow();
                 var strip=targets.children().stream().filter(UiControlStrip.class::isInstance).toList().getLast();input.setValue("b:machine");check(targets.children().contains(strip)&&input.getValue().equals("b:machine"),"Searching replaces only results and keeps the input/control row alive");
                 check(((List<?>)field(targets,"visible")).size()==1,"Target search filters visible results");
                 targets.selectView("Chunks");check(targets.targetCategory().equals("All"),"Chunks remembers the last Targets category");
-                var chunks=new ReportScreen(null,report,true);chunks.width=width;chunks.height=height;chunks.selectView("Chunks");chunks.init();layout(chunks,"Chunks");check(widgets(chunks).stream().noneMatch(w->w instanceof UiDropdown d&&d.label().equals("Category")),"Chunks does not have the Targets category control");
+                var chunks=new ReportScreen(null,report,true);chunks.width=width;chunks.height=height;chunks.selectView("Chunks");chunks.init();layout(chunks,"Chunks");check(widgets(chunks).stream().anyMatch(w->w instanceof UiDropdown d&&d.label().equals("Category")),"Chunks shares the Targets category control");
                 var tasks=new TaskScreen(targets,report,true);tasks.width=width;tasks.height=height;tasks.profileNavigation=nav;set(tasks,"callbackView",false);tasks.init();layout(tasks,"CPU Activity");
                 tasks.focusDropdown("Threads");check(dropdown(tasks,"Threads").isFocused(),"Dropdown focus is restored inside its horizontal strip");
                 check(dropdown(tasks,"Threads").choices().stream().map(UiDropdown.Choice::id).toList().equals(List.of("server","background")),"CPU scopes remain separate");
