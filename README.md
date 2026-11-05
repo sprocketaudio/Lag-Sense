@@ -106,7 +106,7 @@ Operators can share captured results from an area with every player:
 ```text
 /lagsense area pos1
 /lagsense area pos2
-/lagsense area create spawn
+/lagsense area create area1
 ```
 
 Stand at opposite corners when setting pos1 and pos2. Areas cover the selected
