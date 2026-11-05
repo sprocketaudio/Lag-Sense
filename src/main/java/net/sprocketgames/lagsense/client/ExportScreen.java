@@ -108,18 +108,24 @@ public final class ExportScreen extends LagScreen {
             finally{if(temporary!=null)try{Files.deleteIfExists(temporary);}catch(java.io.IOException ignored){}BUSY.set(false);}
         },WRITER);
     }
+    @Override protected int panelMargin(){return Math.max(8,(width-320)/2);}
+    @Override protected int panelTop(){return (height-Math.min(128,height-24))/2;}
+    @Override protected int panelBottom(){return height-panelTop();}
+    @Override protected int footer(){return panelBottom()-32;}
     @Override protected void init() {
-        primary("Save JSON", margin(), 84, 104, () -> save(false));
-        primary("Save CSV", margin() + 112, 84, 104, () -> save(true));
-        UiHints.hint(primary("Export HTML",margin()+224,84,104,this::saveHtml),"Save an interactive HTML report with the current theme that opens without an internet connection.");
+        int buttonWidth=(contentWidth()-16)/3,y=panelTop()+52;
+        primary("Save JSON", margin(), y, buttonWidth, () -> save(false));
+        primary("Save CSV", margin()+buttonWidth+8, y, buttonWidth, () -> save(true));
+        UiHints.hint(primary("Export HTML",margin()+2*(buttonWidth+8),y,buttonWidth,this::saveHtml),"Save an interactive HTML report with the current theme that opens without an internet connection.");
         action("Close", width - margin() - 54, footer(), 54, this::onClose);
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partial) {
         canvas(g, "EXPORT " + (data instanceof CpuInvestigation ? "CALL PATHS" : data instanceof ChunkInvestigation ? "CHUNK" : data instanceof FrameProfile ? "FRAMES" : comparison ? "COMPARISON" : "REPORT"));
-        footerMessage(g,message,mouseX,mouseY);
-        text(g, filename, margin(), 52, contentWidth(), UiTheme.TEXT);
-        text(g,"Exports can include coordinates, UUIDs and server diagnostics.",margin(),124,contentWidth(),UiTheme.SECONDARY);
-        UiHints.region(g, font, mouseX, mouseY, margin(), 50, contentWidth(), 12, filename);
+        headerDivider(g);
+        text(g,message,margin(),footer()+6,Math.max(0,contentWidth()-66),UiTheme.SECONDARY);
+        UiHints.region(g,font,mouseX,mouseY,margin(),footer(),Math.max(0,contentWidth()-66),20,message);
+        text(g,filename.isBlank()?"Exports can include coordinates, UUIDs and server diagnostics.":filename,margin(),panelTop()+80,contentWidth(),UiTheme.SECONDARY);
+        UiHints.region(g, font, mouseX, mouseY, margin(), panelTop()+78, contentWidth(), 12, filename);
         super.extractRenderState(g, mouseX, mouseY, partial);
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
