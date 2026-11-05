@@ -6,8 +6,10 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 
 public final class TaskScreen extends LagScreen {
+    private static final CpuInvestigation PENDING=CpuInvestigation.empty("pending");
     private final Screen parent;
     private final Report original;
+    private Report resolved;
     private final boolean archived;
     private final String ownerFilter;
     private boolean byMod=TaskNavigation.DEFAULT_EVENT_BY_MOD,callbackView=TaskNavigation.DEFAULT_EVENTS;
@@ -17,6 +19,7 @@ public final class TaskScreen extends LagScreen {
     private Report cached;
     private CpuInvestigation cpu;
     private boolean loadingCpu,openingPaths;
+    private long nextCpuRetry,cpuWaitingSince;
     private Long copyPending;
     private ResultText.Cpu copyData;
     private CallTreeScreen paths;
@@ -36,7 +39,11 @@ public final class TaskScreen extends LagScreen {
     public TaskScreen(Screen parent,Report report){this(parent,report,LagSenseClient.archived);}
     public TaskScreen(Screen parent,Report report,boolean archived){this(parent,report,archived,null);}
     public TaskScreen(Screen parent,Report report,boolean archived,String owner){super("Server tasks");this.parent=parent;original=report;this.archived=archived;ownerFilter=owner;}
-    Report report(){return !archived&&LagSenseClient.report!=null&&LagSenseClient.report.id()==original.id()?LagSenseClient.report:original;}
+    Report report(){
+        var latest=LagSenseClient.report;
+        if(!archived&&latest!=null&&latest.id()==original.id()&&latest.admin()==original.admin())resolved=latest;
+        return resolved==null?original:resolved;
+    }
     boolean archived(){return archived;}
     private void prepare(){
         if(cached==report()&&cachedGroup==byMod&&cachedMode==callbackView&&cachedBackground==background)return;
@@ -72,24 +79,40 @@ public final class TaskScreen extends LagScreen {
     private void requestCpu(boolean openPaths){
         if(background){if(openPaths)showPaths();return;}
         openingPaths|=openPaths;
+        retainedCpu();
         if(cpu!=null&&!cpu.state().equals("pending")){if(openingPaths)showPaths();return;}
-        if(loadingCpu)return;loadingCpu=true;cpuError="";
+        if(loadingCpu)return;loadingCpu=true;cpuError="";nextCpuRetry=System.nanoTime()+1_000_000_000L;if(cpuWaitingSince==0)cpuWaitingSince=System.nanoTime();
         Investigations.cpu(minecraft.screen instanceof CallTreeScreen?minecraft.screen:this,report(),archived,value->{loadingCpu=false;cpu=value;copyData=new ResultText.Cpu(cpu);cpuCopies.clear();details.clear();if(copyPending!=null){long token=copyPending;copyPending=null;if(selection.current(token)){selection.waiting(false);copySelected();}}if(openingPaths||minecraft.screen instanceof CallTreeScreen tree&&tree.belongsTo(this))showPaths();else if(minecraft.screen==this)rebuildWidgets();},
             error->{loadingCpu=false;openingPaths=false;if(!background)cpuError=error;copyPending=null;selection.waiting(false);if(minecraft.screen==this)rebuildWidgets();});
     }
     private void showPaths(){
         openingPaths=false;if(minecraft.screen!=this&&!(minecraft.screen instanceof CallTreeScreen tree&&tree.belongsTo(this)))return;
         var data=pathData();
-        if(paths==null||paths.data()!=data){var previous=paths;paths=new CallTreeScreen(this,data,previous==null?ownerFilter:previous.ownerFilter());if(previous!=null)paths.inheritControls(previous);}
+        if(paths==null||paths.data()!=data&&!(paths.data().state().equals("pending")&&data.state().equals("pending"))){var previous=paths;paths=new CallTreeScreen(this,data,previous==null?ownerFilter:previous.ownerFilter());if(previous!=null)paths.inheritControls(previous);}
         paths.profileNavigation=profileNavigation;minecraft.setScreen(paths);
     }
     boolean background(){return background;}
     BackgroundCpu backgroundData(){var d=report().diagnostics();return d==null||d.background()==null?BackgroundCpu.empty("legacy"):d.background();}
     long selectedThread(){return selectedThread;}
     CpuInvestigation pathData(){
-        if(!background)return cpu==null?CpuInvestigation.empty("pending"):cpu;
+        if(!background){retainedCpu();return cpu==null?PENDING:cpu;}
         var data=backgroundData();var worker=data.thread(selectedThread);if(worker==null&&!data.threads().isEmpty()){worker=data.threads().getFirst();selectedThread=worker.id();}
         return worker==null?CpuInvestigation.empty(data.state()):worker.cpu();
+    }
+    private void retainedCpu(){
+        var value=Investigations.retainedCpu(report());
+        if(value!=null&&(cpu==null||cpu.state().equals("pending"))){cpu=value;copyData=new ResultText.Cpu(cpu);cpuCopies.clear();details.clear();cpuError="";cpuWaitingSince=0;}
+    }
+    String pathError(){return cpuError;}
+    boolean pathsLoading(){return loadingCpu;}
+    void pollPaths(CallTreeScreen screen){
+        if(background)return;
+        var value=pathData();
+        if(!value.state().equals("pending")){if(screen.data()!=value)showPaths();return;}
+        if(!cpuError.isBlank()||loadingCpu)return;
+        long now=System.nanoTime();
+        if(cpuWaitingSince!=0&&now-cpuWaitingSince>=60_000_000_000L){cpuError="CPU analysis timed out. Reopen the profile to retry.";return;}
+        if(now>=nextCpuRetry)requestCpu(false);
     }
     void chooseThread(long id){background=id!=0;selectedThread=id;showPaths();if(!background)requestCpu(false);}
     void selectSection(boolean events){view(events,events?eventByMod:cpuByMod);}

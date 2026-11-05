@@ -253,7 +253,7 @@ public final class Profiler {
         } else if (ticks % 20 == 0 && initiator != null) {
             ServerPlayer player = server.getPlayerList().getPlayer(initiator);
             if (player != null && LagSense.isAdmin(player.createCommandSourceStack()) && hasClient(player)) {
-                sendPacket(player, new Report(deadline,System.currentTimeMillis(),ticks,tickNanos/1_000_000.0/Math.max(1,ticks),true,false,hottest==null?List.of():List.of(hottest.entry()),true,(int)Math.max(0,(deadline-System.nanoTime())/1_000_000_000L)), false);
+                sendPacket(player, new Report(deadline,System.currentTimeMillis(),ticks,tickNanos/1_000_000.0/Math.max(1,ticks),true,false,hottest==null?List.of():List.of(hottest.entry()),true,(int)Math.max(0,(deadline-System.nanoTime())/1_000_000_000L),List.of(),performance.finish(captureEnded,captureReason).averageTps()), false);
             }
         }
     }

@@ -7,6 +7,7 @@ import java.util.*;
 final class PlayerAccessChecks {
     private static void check(boolean condition,String why){if(!condition)throw new AssertionError(why);}
     private static void state(boolean admin,boolean clear,long id,Report.Entry marker){ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(admin,clear,false,id,100,true,marker,20,"")));}
+    private static ReportScreen emptyScreen(){var screen=new ReportScreen(null,null,false);screen.width=854;screen.height=480;screen.init();return screen;}
     static void run()throws Exception{
         var saved=new HashMap<java.lang.reflect.Field,Object>();for(var field:ClientAccess.class.getDeclaredFields())if(java.lang.reflect.Modifier.isStatic(field.getModifiers())){field.setAccessible(true);saved.put(field,field.get(null));}
         var settings=LagSenseClient.settings;var theme=UiTheme.current();
@@ -31,9 +32,48 @@ final class PlayerAccessChecks {
             long token=ClientAccess.epoch();state(false,true,0,null);
             check(LagSenseClient.report==null&&LagSenseClient.waypoint==null&&ClientAccess.scopedReport()==null&&!ClientAccess.allowed(view)&&!ClientAccess.current(token),"Revocation removes reports, markers and deferred copy/export authorization");
             state(true,false,full.id(),null);check(ClientAccess.admin()&&ClientAccess.allowed(full),"Operators retain full report authority");
-            var empty=new ReportScreen(null,null,false);empty.width=854;empty.height=480;empty.init();check(ProfileLayoutChecks.widgets(empty).stream().anyMatch(w->w.getMessage().getString().equals("Start Profile")),"Operator empty-state capture remains available");
-            LagSenseClient.storeReport(full,false,new MarkerIndex(full),true);var deadline=ClientAccess.class.getDeclaredField("deadline");deadline.setAccessible(true);deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();
-            check(!ClientAccess.admin()&&LagSenseClient.report==null&&!ClientAccess.allowed(full),"Expired server authorization fails closed even without a revocation packet");
+            var entity=new Report.Entry("Entity","minecraft:zombie","minecraft:overworld",-9,-27,-109,15000000,600,UUID.randomUUID());
+            LagSenseClient.mark(new ComparisonTargets.Destination(full.id(),1000,0,entity,600,false));
+            var moved=new EntityTracking(entity.entityId(),"minecraft:overworld",140.25,34,-40.5,.6,1.95);
+            ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,false,full.id(),100,false,entity,20,"",false,moved)));
+            check(LagSenseClient.tracked().equals(moved)&&LagSenseClient.markedPose(1).x()==140.25&&LagSenseClient.waypoint.equals(entity)&&LagSenseClient.waypointTicks==600,"Server tracking guides a client-unloaded mob at its current position without replacing captured identity, coordinates or timing");
+            var crossed=new EntityTracking(entity.entityId(),"minecraft:the_nether",-14,70,20,.6,1.95);
+            ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,false,full.id(),100,false,entity,20,"",false,crossed)));
+            check(LagSenseClient.markedPose(1).dimension().equals("minecraft:the_nether"),"Marked guidance can follow a server-loaded UUID into a different dimension");
+            ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,false,full.id(),100,false,entity,20,"",false,null)));
+            check(LagSenseClient.markedPose(1)==null&&MarkedDirection.guidance(entity,null,"minecraft:overworld",-9,-27,-109,0).equals("Not loaded or no longer exists"),"A server-unresolved mob loses its direction instead of silently pointing back at capture coordinates");
+            for(String reason:List.of("unloaded","dead","removed","changed_dimension","not_found")){
+                ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,false,full.id(),100,false,entity,20,"",false,null,reason)));
+                check(LagSenseClient.trackingStatus().equals(reason)&&MarkedDirection.guidance(entity,null,"minecraft:overworld",0,64,0,0,LagSenseClient.trackingStatus()).equals(EntityTracking.statusText(reason)),"HUD receives the server-observed unavailability reason without stale direction or location");
+            }
+            LagSenseClient.tracked(new EntityTracking(UUID.randomUUID(),"minecraft:overworld",0,70,0,.6,1.95));check(LagSenseClient.tracked()==null,"A delayed update for a different UUID cannot move the current mark");
+            LagSenseClient.tracked(new EntityTracking(entity.entityId(),"minecraft:overworld",Double.NaN,70,0,.6,1.95));check(LagSenseClient.tracked()==null,"Invalid server location values cannot enter navigation calculations");
+            LagSenseClient.tracked(moved);long trackingToken=ClientAccess.epoch();state(false,true,0,null);
+            check(LagSenseClient.tracked()==null&&LagSenseClient.waypoint==null&&!ClientAccess.current(trackingToken),"Permission revocation clears remote tracking and its waypoint");
+            state(true,false,full.id(),null);
+            check(!ClientAccess.canReturn(),"No destination or legacy state leaves Return unavailable");
+            var available=new ProfilerStatePayload.State(true,false,false,full.id(),100,false,null,20,"",true);
+            ClientAccess.accept(new ProfilerStatePayload(available));check(ClientAccess.canReturn(),"A current operator grant can enable Return when the server has a destination");
+            var legacy=Profiler.JSON.toJsonTree(available).getAsJsonObject();legacy.remove("canReturn");ClientAccess.accept(new ProfilerStatePayload(legacy.toString()));check(!ClientAccess.canReturn(),"Older server packets without availability default to disabled");
+
+            ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,false,full.id(),100,false,null,20,"",false)));check(!ClientAccess.canReturn(),"Using Return disables it as soon as the server consumes the destination");
+            ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(false,false,false,view.id(),100,false,null,20,"",true)));check(!ClientAccess.canReturn(),"Non-operators cannot enable Return even with a true availability field");
+            ClientAccess.accept(new ProfilerStatePayload(available));ClientAccess.reset();check(!ClientAccess.canReturn(),"Disconnect clears Return availability");
+            state(true,false,full.id(),null);
+            var empty=emptyScreen();check(ProfileLayoutChecks.widgets(empty).stream().anyMatch(w->w.getMessage().getString().equals("Start Profile")),"Operator empty-state capture remains available");
+            ClientAccess.beginReportLoad();empty=emptyScreen();
+            check(empty.emptyMessage().equals("Loading profile…")&&ProfileLayoutChecks.widgets(empty).stream().noneMatch(w->w.getMessage().getString().equals("Start Profile")),"Loading a previous capture shows progress without offering a misleading new capture");
+            ClientAccess.accept(new ProfilerStatePayload(available));
+            check(ClientAccess.reportLoading(),"An authorization grant does not finish the report transfer before its data arrives");
+            ClientAccess.received(full,new MarkerIndex(full));empty=emptyScreen();
+            check(!ClientAccess.reportLoading()&&ClientAccess.reportError().isEmpty(),"Receiving the report completes loading");
+            ClientAccess.beginReportLoad();ClientAccess.failReportLoad();empty=emptyScreen();
+            check(empty.emptyMessage().equals("Could not load profile.")&&ProfileLayoutChecks.widgets(empty).stream().anyMatch(w->w.getMessage().getString().equals("Retry")),"Failed transfers show Retry instead of claiming there are no captures");
+            ClientAccess.beginReportLoad();ClientAccess.accept(new ProfilerStatePayload(new ProfilerStatePayload.State(true,false,true,0,100,false,null,0,"")));empty=emptyScreen();
+            check(!ClientAccess.reportLoading()&&empty.emptyMessage().equals("No profile captured yet")&&ProfileLayoutChecks.widgets(empty).stream().anyMatch(w->w.getMessage().getString().equals("Start Profile")),"Only the server's confirmed empty response enables the normal empty state");
+            ClientAccess.beginReportLoad();ClientAccess.reset();check(!ClientAccess.reportLoading()&&ClientAccess.reportError().isEmpty(),"Disconnect clears pending loading and errors");
+            ClientAccess.accept(new ProfilerStatePayload(available));LagSenseClient.storeReport(full,false,new MarkerIndex(full),true);var deadline=ClientAccess.class.getDeclaredField("deadline");deadline.setAccessible(true);deadline.setLong(null,System.nanoTime()-1);ClientAccess.tick();
+            check(!ClientAccess.admin()&&!ClientAccess.canReturn()&&LagSenseClient.report==null&&!ClientAccess.allowed(full),"Expired server authorization disables Return and fails closed even without a revocation packet");
         }finally{for(var value:saved.entrySet())value.getKey().set(null,value.getValue());LagSenseClient.settings=settings;UiTheme.select(theme);}
         System.out.println("Unified player UI checks passed (three permitted tabs, retained History/Settings, read-only empty/history views, server marker grants, role changes, cache/copy/export revocation and lease expiry in all themes).");
     }

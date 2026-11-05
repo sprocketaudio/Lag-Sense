@@ -14,9 +14,19 @@ public final class ClientAccess {
     private static MarkerIndex scopedMarkers;
     private static long lastRequest;
     private static boolean openQueued;
+    private static boolean reportLoading;
+    private static long reportProgress;
+    private static String reportError="";
     static void enable(){enabled=true;reset();}
-    static void reset(){state=null;deadline=0;scoped=null;scopedMarkers=null;lastRequest=0;openQueued=false;epoch++;}
+    static void reset(){state=null;deadline=0;scoped=null;scopedMarkers=null;lastRequest=0;openQueued=false;completeReportLoad();epoch++;}
+    static void beginReportLoad(){reportLoading=true;reportError="";reportProgress=System.nanoTime();}
+    static void completeReportLoad(){reportLoading=false;reportError="";reportProgress=0;}
+    static void failReportLoad(){if(reportLoading){reportLoading=false;reportError="Could not load profile.";}}
+    static void reportProgress(){if(reportLoading)reportProgress=System.nanoTime();}
+    static boolean reportLoading(){return reportLoading;}
+    static String reportError(){return reportError;}
     static boolean valid(){return !enabled||state!=null&&System.nanoTime()<deadline;}
+    static boolean canReturn(){return valid()&&state!=null&&state.admin()&&state.canReturn();}
     public static boolean admin(){return !enabled||valid()&&state.admin();}
     static boolean allowed(Report report){return !enabled||valid()&&report!=null&&(admin()||!report.admin()&&state.report()==report.id());}
     public static long epoch(){return epoch;}
@@ -24,33 +34,39 @@ public final class ClientAccess {
     static boolean request(String action){return request(new ProfilerRequest(action));}
     static boolean request(ProfilerRequest request){
         var mc=Minecraft.getInstance();if(mc==null||mc.player==null||mc.getConnection()==null||!NetworkRegistry.hasChannel(mc.getConnection(),ProfilerRequest.TYPE.id()))return false;
+        if(request.action().equals("open"))beginReportLoad();
         long now=System.nanoTime();if(request.action().equals("open")&&now-lastRequest<350_000_000L){openQueued=true;return true;}
         ClientPacketDistributor.sendToServer(request);lastRequest=now;if(request.action().equals("open"))openQueued=false;return true;
     }
     static void open(){
         var mc=Minecraft.getInstance();if(mc==null)return;
-        mc.setScreen(new ReportScreen(null,allowed(LagSenseClient.report)?LagSenseClient.report:null,false));request("open");
+        request("open");mc.setScreen(allowed(LagSenseClient.report)?LagSenseClient.latestReportScreen():new ReportScreen(null,null,false));
     }
     static void accept(ProfilerStatePayload payload){
-        final ProfilerStatePayload.State value;try{value=Profiler.JSON.fromJson(payload.json(),ProfilerStatePayload.State.class);}catch(RuntimeException error){state=null;deadline=0;invalidate(true);return;}
-        if(value==null||value.leaseTicks()<1||value.leaseTicks()>100){state=null;deadline=0;invalidate(true);return;}
+        final ProfilerStatePayload.State value;try{value=Profiler.JSON.fromJson(payload.json(),ProfilerStatePayload.State.class);}catch(RuntimeException error){failReportLoad();state=null;deadline=0;invalidate(true);return;}
+        if(value==null||value.leaseTicks()<1||value.leaseTicks()>100){failReportLoad();state=null;deadline=0;invalidate(true);return;}
         boolean before=admin();long previous=state==null?0:state.report();enabled=true;state=value;deadline=System.nanoTime()+value.leaseTicks()*50_000_000L;
+        if(value.open()&&value.report()==0)completeReportLoad();
+        else if(reportLoading&&value.message()!=null&&!value.message().isBlank())failReportLoad();
         if(value.clear()||before&&!value.admin())invalidate(!value.open());
         else if(!value.admin()&&previous!=value.report())invalidate(false);
         var mc=Minecraft.getInstance();
         if(value.markerChanged()&&!value.clear()){
             LagSenseClient.serverMark(value);
         }
+        LagSenseClient.tracked(value.clear()?null:value.trackedEntity());
+        if(!value.clear())LagSenseClient.trackingStatus(value);
         if(mc!=null){if(value.open())mc.setScreen(LagSenseClient.latestReportScreen());else if(before!=admin()&&mc.screen instanceof LagScreen screen)screen.rebuildResults();}
         if(value.message()!=null&&!value.message().isBlank())ShortcutBindings.feedback(value.message());
     }
-    static void received(Report report,MarkerIndex markers){if(!report.admin()){scoped=report;scopedMarkers=markers;}}
+    static void received(Report report,MarkerIndex markers){completeReportLoad();if(!report.admin()){scoped=report;scopedMarkers=markers;}}
     static MarkerIndex markers(Report report){return allowed(report)&&scoped!=null&&scoped.id()==report.id()?scopedMarkers:null;}
     static Report scopedReport(){return valid()?scoped:null;}
     static MarkerIndex scopedIndex(){return valid()?scopedMarkers:null;}
     static void tick(){
+        if(reportLoading&&System.nanoTime()-reportProgress>60_000_000_000L)failReportLoad();
         if(openQueued&&System.nanoTime()-lastRequest>=350_000_000L)request("open");
-        if(enabled&&state!=null&&System.nanoTime()>=deadline){state=null;invalidate(true);return;}
+        if(enabled&&state!=null&&System.nanoTime()>=deadline){failReportLoad();state=null;invalidate(true);return;}
         var mc=Minecraft.getInstance();if(enabled&&mc!=null&&mc.screen instanceof LagScreen screen&&screen.profileNavigation!=null&&!screen.profileNavigation.permitted()){mc.setScreen(new ReportScreen(null,null,false));request("open");}
     }
     private static void invalidate(boolean navigate){

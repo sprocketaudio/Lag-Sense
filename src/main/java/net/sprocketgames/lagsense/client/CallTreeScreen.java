@@ -23,9 +23,8 @@ public final class CallTreeScreen extends LagScreen {
     private final Map<Boolean,Integer> offsets=new HashMap<>();
     private int selectionOffset;
     private EditBox search;
-    private boolean loading,rowsMounted;
+    private boolean rowsMounted;
     private String sort="samples";
-    private String error="";
     private List<CallTreeIndex.Row> branches=List.of();
     private List<CpuInvestigation.Method> methods=List.of();
     public CallTreeScreen(Screen parent,CpuInvestigation data,String owner){
@@ -64,10 +63,6 @@ public final class CallTreeScreen extends LagScreen {
         var choices=new ArrayList<UiDropdown.Choice>();choices.add(ProfileControls.choice("","All mods"));mods.matching("").forEach(m->choices.add(ProfileControls.choice(m.id(),m.name())));
         controls.dropdown("Mod",ProfileControls.PATH_MOD,choices,owner==null?"":owner,value->choose(value.isEmpty()?null:value));
         if(running)controls.dropdown("Sort",ProfileControls.PATH_SORT,List.of(ProfileControls.choice("samples","Most samples"),ProfileControls.choice("name","Name")),sort,value->{sort=value;resetResults();refresh();rebuildWidgets();});
-        if(data.state().equals("pending")&&parent instanceof TaskScreen task)controls.action("Reload",58,()->{
-            if(loading)return;loading=true;error="";
-            Investigations.cpu(this,task.report(),task.archived(),next->{loading=false;if(minecraft.screen!=this)return;var screen=new CallTreeScreen(parent,next,owner);screen.inheritControls(this);screen.expanded.addAll(expanded);screen.inspected.addAll(inspected);screen.profileNavigation=profileNavigation;screen.refresh();screen.restoreListOffset(listOffset());minecraft.setScreen(screen);},message->{loading=false;error=message;});
-        });
         top=controls.finish()+8;refreshRows();
         copyButton(()->selection.copy(data.limited()?"Call paths incomplete":""));
         action("Export",margin()+48,footer(),48,()->minecraft.setScreen(new ExportScreen(this,data)));
@@ -103,11 +98,16 @@ public final class CallTreeScreen extends LagScreen {
         if(inspected.contains(key))out.details(key+":details",details.computeIfAbsent(method.id(),k->MethodPresentation.details(data,method)),Math.min(indent+7,Math.max(0,contentWidth()-240)));
     }
     private void inspect(String key){if(!inspected.add(key))inspected.remove(key);rebuildWidgets();}
+    @Override public void tick(){if(parent instanceof TaskScreen task)task.pollPaths(this);}
+    String emptyMessage(){
+        if(parent instanceof TaskScreen task&&!task.pathError().isBlank())return task.pathError();
+        return data.state().equals("pending")?parent instanceof TaskScreen task&&task.pathsLoading()?"Loading call paths…":"Preparing call paths…":data.state().equals("disabled")?"CPU sampling was off for this profile.":data.state().equals("legacy")?"This profile has no saved call paths.":data.state().equals("unavailable")?"CPU samples unavailable.":"No matching sampled methods.";
+    }
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mx,int my,float a){
         if(profileNavigation!=null)profileNavigation.render(this,g,mx,my);else{canvas(g,"CALL PATHS");text(g,data.treeSamples()+" retained samples",margin(),30,contentWidth(),UiTheme.SECONDARY);}
-        text(g,loading?"Loading call paths…":!error.isBlank()?error:data.limited()?"Call paths incomplete":"",margin(),height-62,contentWidth(),UiTheme.WARNING);
+        text(g,data.limited()?"Call paths incomplete":"",margin(),height-62,contentWidth(),UiTheme.WARNING);
         if(data.limited())UiHints.region(g,font,mx,my,margin(),height-64,contentWidth(),14,data.limitation());
-        if(!selectingMod&&!selectingThread&&(running?methods.isEmpty():branches.isEmpty()))text(g,data.state().equals("pending")?"Call paths are being prepared…":data.state().equals("disabled")?"CPU sampling was off for this profile.":data.state().equals("legacy")?"This profile has no saved call paths.":"No matching sampled methods.",margin(),top+8,contentWidth(),UiTheme.SECONDARY);
+        if(!selectingMod&&!selectingThread&&(running?methods.isEmpty():branches.isEmpty()))text(g,emptyMessage(),margin(),top+8,contentWidth(),parent instanceof TaskScreen task&&!task.pathError().isBlank()?UiTheme.WARNING:UiTheme.SECONDARY);
         super.extractRenderState(g,mx,my,a);
     }
     @Override public void onClose(){if(profileNavigation!=null)profileNavigation.close();else minecraft.setScreen(parent);}

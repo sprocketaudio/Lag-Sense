@@ -25,6 +25,9 @@ final class ProfileLayoutChecks {
             for(var selectedTheme:UiTheme.Theme.values())for(int width:List.of(960,640,480,426,320)){
                 UiTheme.select(selectedTheme);int height=Math.max(240,width*9/16);
                 var targets=new ReportScreen(null,report,true);targets.width=width;targets.height=height;targets.init();var nav=targets.profileNavigation;
+                var footerButtons=List.of("Copy","Export","Unmark","Return").stream().map(label->widgets(targets).stream().filter(w->w.getMessage().getString().equals(label)).findFirst().orElseThrow()).toList();
+                for(int i=1;i<footerButtons.size();i++){var before=footerButtons.get(i-1);var after=footerButtons.get(i);check(after.getX()-before.getX()-before.getWidth()==4&&after.getY()==before.getY(),"Left footer buttons keep the same four-pixel gap with native label widths");}
+
                 layout(targets,"Targets");check(dropdown(targets,"Category").choices().stream().map(UiDropdown.Choice::id).toList().equals(List.of("All","Entity","Block","Ticks")),"Targets retains all original category filters");
                 check(dropdown(targets,"Group").choices().size()==4,"Both mod and type grouping combinations remain available");
                 var input=widgets(targets).stream().filter(UiInput.class::isInstance).map(UiInput.class::cast).findFirst().orElseThrow();
@@ -40,6 +43,11 @@ final class ProfileLayoutChecks {
                 check(dropdown(paths,"Threads").choices().stream().map(UiDropdown.Choice::id).toList().equals(List.of("0","2","3")),"Call paths offers the server and individually identified workers");
                 check(dropdown(paths,"Group").choices().stream().map(UiDropdown.Choice::id).toList().equals(List.of("hierarchy","running")),"Call path modes use a single Group dropdown");
                 paths.runningMode(true);var running=new CallTreeScreen(tasks,server,null);running.width=width;running.height=height;running.profileNavigation=nav;running.runningMode(true);running.init();layout(running,"Call Paths");check(dropdown(running,"Sort").choices().size()==2,"Running Code keeps relevant sorting");
+                for(boolean runningMode:List.of(false,true)){
+                    var pending=new CallTreeScreen(tasks,CpuInvestigation.empty("pending"),null);pending.width=width;pending.height=height;pending.profileNavigation=nav;pending.runningMode(runningMode);pending.init();
+                    check(widgets(pending).stream().noneMatch(w->w.getMessage().getString().equals("Reload")),"Neither pending call-path mode introduces an unrequested Reload control");
+                    if(width>=640){var controls=pending.children().stream().filter(UiControlStrip.class::isInstance).map(UiControlStrip.class::cast).toList().getLast();check(controls.maximum()==0,"The complete pending call-path control row fits normal GUI scales without horizontal scrolling");}
+                }
                 var map=new HeatmapScreen(targets,report,true);map.width=width;map.height=height;map.profileNavigation=nav;map.init();layout(map,"Map");check((int)field(map,"mapTop")==120,"Map begins below the same two rows");
                 int sharedSearch=widgets(targets).stream().filter(UiInput.class::isInstance).findFirst().orElseThrow().getRectangle().width();
                 for(var page:List.of(chunks,tasks,events,paths,running,map))check(widgets(page).stream().filter(UiInput.class::isInstance).findFirst().orElseThrow().getRectangle().width()==sharedSearch,"Search has identical width across every tab and both call-path modes");

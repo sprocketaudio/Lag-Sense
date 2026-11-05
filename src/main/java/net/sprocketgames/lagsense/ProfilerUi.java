@@ -12,7 +12,9 @@ import net.neoforged.neoforge.network.registration.NetworkRegistry;
 public final class ProfilerUi implements AutoCloseable {
     private static final int LEASE_TICKS=100;
     private static final class Session {
-        boolean admin;Report view;ScopedReports.Evidence evidence,history;Report.Entry mark;boolean listing;long job;
+        boolean admin;Report view;ScopedReports.Evidence evidence,history;Report.Entry mark;boolean listing;long job,trackingJob;
+        UUID trackedId;java.lang.ref.WeakReference<net.minecraft.world.entity.Entity> lastEntity;
+        String markerStatus="";
         Session(boolean admin){this.admin=admin;}
     }
     private final MinecraftServer server;
@@ -35,7 +37,9 @@ public final class ProfilerUi implements AutoCloseable {
             case "settings"->{renew(p);transport.accept(p,SettingsPayload.view(admin(p),Profiler.settings,Profiler.delivery==null?"Off":Profiler.delivery.summary()));}
             case "captures"->{if(admin(p))Profiler.openSettings(p,"");else error(p,"Operator access required.");}
             case "mark"->mark(p,request.report(),request.index());
-            case "unmark"->{var s=session(p);s.mark=null;state(p,s,false,false,true,"");}
+            case "track"->track(p,request.report(),request.index());
+            case "mark_chunk"->markChunk(p,request.report(),request.index());
+            case "unmark"->{var s=session(p);s.trackingJob++;s.mark=null;state(p,s,false,false,true,"");}
             default->error(p,"Unknown profiler action.");
         }
     }
@@ -75,9 +79,14 @@ public final class ProfilerUi implements AutoCloseable {
         var view=source.view(admin(p),access(p));grant(p,view);transport.accept(p,new ReportPayload(ReportWire.json(view,Profiler.JSON),open,archived));
     }
     public void grant(ServerPlayer p,Report view){
-        var s=session(p);boolean changed=s.admin!=admin(p);s.admin=admin(p);s.view=view;s.mark=null;
+        var s=session(p);boolean changed=s.admin!=admin(p);
+        boolean sameView=!changed&&s.view!=null&&s.view.id()==view.id();
+        boolean keepMark=sameView&&s.mark!=null;
+        s.admin=admin(p);s.view=view;
         s.evidence=s.admin?null:ScopedReports.evidence(view,Profiler.areas.areas());
-        state(p,s,changed,false,true,"");
+        boolean revoked=keepMark&&!s.admin&&currentMarker(p,s.mark)==null;
+        if(!keepMark||revoked){s.trackingJob++;s.mark=null;}
+        state(p,s,changed,false,!sameView||revoked,"");
     }
     public boolean permitted(ServerPlayer p,Report view){
         if(view.admin()&&!admin(p))return false;
@@ -86,6 +95,10 @@ public final class ProfilerUi implements AutoCloseable {
         return evidence.valid(Profiler.areas.areas(),k->owned.contains(k.dimension(),k.x()<<4,k.z()<<4));
     }
     private Report.Entry currentMarker(ServerPlayer p,Report.Entry recorded){
+        if(recorded!=null&&recorded.kind().equals("Chunk")){
+            var s=sessions.get(p.getUUID());
+            return s!=null&&s.view!=null&&permitted(p,s.view)&&s.view.chunks().stream().anyMatch(c->c.dimension().equals(recorded.dimension())&&c.x()==(recorded.x()>>4)&&c.z()==(recorded.z()>>4))?recorded:null;
+        }
         if(recorded==null||!access(p).test(recorded))return null;
         if(recorded.entityId()!=null)for(var level:server.getAllLevels()){
             var entity=level.getEntity(recorded.entityId());if(entity==null||entity.isRemoved())continue;
@@ -98,11 +111,53 @@ public final class ProfilerUi implements AutoCloseable {
         var s=sessions.get(p.getUUID());if(s!=null&&s.admin!=admin(p)){state(p,s,true,false,true,"Permissions changed. Open the profiler again.");return;}
         var entry=s==null?null:ScopedReports.target(s.view,report,index);
         if(entry==null||!admin(p)&&currentMarker(p,entry)==null){if(s!=null){s.mark=null;state(p,s,false,false,true,"Target access changed. Open the report again.");}return;}
-        s.mark=entry;state(p,s,false,false,true,"");
+        s.trackingJob++;s.mark=entry;state(p,s,false,false,true,"");
+    }
+    private void markChunk(ServerPlayer p,long report,int index){
+        var s=sessions.get(p.getUUID());
+        if(s==null||s.view==null||s.admin!=admin(p)||s.view.id()!=report||!permitted(p,s.view))return;
+        var chunks=s.view.chunks();if(chunks==null||index<0||index>=chunks.size())return;
+        var entry=HistoricalTargets.chunk(chunks.get(index),p.getBlockY());if(entry==null)return;
+        s.trackingJob++;s.mark=entry;state(p,s,false,false,true,"");
+    }
+    private void track(ServerPlayer p,long capture,int index){
+        if(!admin(p))return;
+        var s=session(p);long job=++s.trackingJob;
+        var source=s.view!=null&&s.view.id()==capture?s.view:Profiler.latest!=null&&Profiler.latest.id()==capture?Profiler.latest:null;
+        if(source!=null){track(p,s,source,index);return;}
+        if(Profiler.archives!=null)Profiler.archives.readInvestigation(capture,(saved,error)->server.execute(()->{
+            if(closed||sessions.get(p.getUUID())!=s||lookup.apply(p.getUUID())!=p||s.trackingJob!=job||!admin(p))return;
+            if(error==null&&saved!=null)track(p,s,saved,index);
+        }));
+    }
+    private void track(ServerPlayer p,Session s,Report source,int index){
+        var entry=ScopedReports.target(source,source.id(),index);
+        if(entry==null||!entry.kind().equals("Entity")||entry.entityId()==null)return;
+        s.mark=entry;state(p,s,false,false,false,"");
+    }
+    private EntityTracking tracked(ServerPlayer p,Session s){
+        var entry=s.mark;
+        if(entry==null||entry.entityId()==null){s.trackedId=null;s.lastEntity=null;s.markerStatus=entry!=null&&entry.kind().equals("Entity")?"missing_uuid":"";return null;}
+        if(!entry.entityId().equals(s.trackedId)){s.trackedId=entry.entityId();s.lastEntity=null;s.markerStatus="";}
+        for(var level:server.getAllLevels()){
+            var entity=level.getEntity(entry.entityId());if(entity==null||entity.isRemoved())continue;
+            if(!entry.type().equals(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString())){s.markerStatus="identity_changed";return null;}
+            String dimension=level.dimension().identifier().toString();
+            if(!admin(p)&&!access(p).contains(dimension,entity.getBlockX(),entity.getBlockZ()))return null;
+            if(s.lastEntity==null||s.lastEntity.get()!=entity)s.lastEntity=new java.lang.ref.WeakReference<>(entity);
+            if(!entity.isAlive()){s.markerStatus="dead";return null;}
+            s.markerStatus="tracking";
+            return new EntityTracking(entry.entityId(),dimension,entity.getX(),entity.getY(),entity.getZ(),entity.getBbWidth(),entity.getBbHeight());
+        }
+        var last=s.lastEntity==null?null:s.lastEntity.get();
+        if(last!=null)s.markerStatus=last.isRemoved()?EntityTracking.removalStatus(last.getRemovalReason()):!last.isAlive()?"dead":"unloaded";
+        else if(s.markerStatus.isEmpty()||s.markerStatus.equals("tracking"))s.markerStatus="not_found";
+        return null;
     }
     private void state(ServerPlayer p,Session s,boolean clear,boolean open,boolean markerChanged,String message){
         boolean role=admin(p);if(role!=s.admin){s.admin=role;s.view=null;s.evidence=null;s.history=null;s.mark=null;s.job++;clear=true;markerChanged=true;}
-        transport.accept(p,new ProfilerStatePayload(new ProfilerStatePayload.State(s.admin,clear,open,s.view==null?0:s.view.id(),LEASE_TICKS,markerChanged,s.mark,s.view==null?0:s.view.ticks(),message)));
+        var location=tracked(p,s);
+        transport.accept(p,new ProfilerStatePayload(new ProfilerStatePayload.State(s.admin,clear,open,s.view==null?0:s.view.id(),LEASE_TICKS,markerChanged,s.mark,s.view==null?0:s.view.ticks(),message,LagSense.canReturn(p),location,s.markerStatus)));
     }
     void renew(ServerPlayer p){state(p,session(p),false,false,false,"");}
     private void error(ServerPlayer p,String message){state(p,session(p),false,false,false,message);}

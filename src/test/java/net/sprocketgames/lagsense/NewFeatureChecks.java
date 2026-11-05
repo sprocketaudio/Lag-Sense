@@ -48,7 +48,11 @@ final class NewFeatureChecks {
         require(!backup.blocked(new BackupMonitor.Settings("warn", 60), 2) && !backup.blocked(new BackupMonitor.Settings("ignore", 60), 2), "Warn and ignore do not suppress automatic captures");
         backup.update(Set.of(), 10); backup.update(Set.of(), 1_000_000_010L);
         require(backup.blocked(defer, 59_000_000_010L) && !backup.blocked(defer, 60_000_000_010L), "Grace starts once at backup end and expires exactly once");
-        backup.update(Set.of("FTB Backups 3"), 61_000_000_010L); require(backup.blocked(defer, 61_000_000_011L), "Repeated backups extend active suppression");
+        for(long second=1;second<=180;second++){
+            long now=10+second*1_000_000_000L;backup.update(Set.of(),now);
+            require(backup.blocked(defer,now)==(second<60)&&backup.remainingSeconds(defer,now)==Math.max(0,60-second),"Repeated idle polls cannot restart the backup grace timer");
+        }
+        backup.update(Set.of("FTB Backups 3"), 181_000_000_010L); require(backup.blocked(defer, 181_000_000_011L), "Repeated backups extend active suppression");
         backup.clear(); require(!backup.blocked(defer, 0), "Server shutdown clears backup state");
 
         var entry = new Report.Entry("Random block", "minecraft:wheat", "minecraft:overworld", -1, 64, -1, 100_000, 2);

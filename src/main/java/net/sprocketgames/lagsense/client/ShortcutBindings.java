@@ -71,7 +71,7 @@ public final class ShortcutBindings {
     static void feedback(String text){var mc=Minecraft.getInstance();if(mc!=null&&mc.player!=null)mc.player.sendOverlayMessage(Component.literal(text));}
     static String hint(KeyMapping mapping){return mapping.isUnbound()?"":mapping.getTranslatedKeyMessage().getString();}
     static String hudHint(){return hudHint(hint(REPORT),hint(VISIBILITY));}
-    static String hudHint(String a,String b){a=a.replace(" + ","+");b=b.replace(" + ","+");return (a.isEmpty()?"":a+" Profiler")+(!a.isEmpty()&&!b.isEmpty()?" | ":"")+(b.isEmpty()?"":b+" Hide visuals");}
+    static String hudHint(String a,String b){a=a.replace(" + ","+");b=b.replace(" + ","+");return (a.isEmpty()?"":a+" Profiler")+(!a.isEmpty()&&!b.isEmpty()?" | ":"")+(b.isEmpty()?"":b+" Toggle visuals");}
     static void clear(){held.clear();pending.clear();VisualVisibility.reset();}
     static void migrateDefaults(OverlaySettings settings,Options options){
         if(settings.shortcutVersion>=1)return;

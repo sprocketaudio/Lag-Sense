@@ -76,6 +76,7 @@ public final class CoreChecks {
         ComparisonActionChecks.run();
         HistoricalTargetChecks.run();
         TeleportChecks.run();
+        ChunkWorldChecks.run();
         SelectedCopyChecks.run();
         GradientChecks.run();
         TypographyChecks.run();

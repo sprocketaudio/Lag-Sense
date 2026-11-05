@@ -15,6 +15,7 @@ public final class OverlaySettings {
     public int distance = 96;
     public double minimumMicros = 1;
     public UiTheme.Theme theme = UiTheme.DEFAULT;
+    public ResultViewSettings results = ResultViewSettings.defaults();
     public void resetDisplay(){
         var defaults=new OverlaySettings();enabled=defaults.enabled;worldMarkers=defaults.worldMarkers;chunkHeatmap=defaults.chunkHeatmap;
         scale=defaults.scale;x=defaults.x;y=defaults.y;distance=defaults.distance;minimumMicros=defaults.minimumMicros;theme=defaults.theme;
@@ -31,6 +32,7 @@ public final class OverlaySettings {
     }
     public void clamp() {
         if(theme==null)theme=UiTheme.DEFAULT;
+        if(results==null)results=ResultViewSettings.defaults();
         scale = Float.isFinite(scale) ? Math.max(0.5f, Math.min(2, scale)) : 1;
         x = Math.max(0, Math.min(4096, x)); y = Math.max(0, Math.min(4096, y));
         distance = Math.max(16, Math.min(192, distance));

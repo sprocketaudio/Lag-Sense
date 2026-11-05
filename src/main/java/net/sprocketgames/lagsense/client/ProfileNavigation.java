@@ -14,13 +14,15 @@ public final class ProfileNavigation {
     private final boolean archived;
     private HeatmapScreen map;
     private TaskScreen tasks;
-    private final String summary, title;
-    private long age=-1;
+    private final String title;
+    private Report prepared;
+    private long age=-1,observedAt;
+    private Report activeCapture;
+    private long activeObservedAt,activeAge=-1;
     private String status="", statusHint="";
     public ProfileNavigation(ReportScreen results, Screen parent, Report report, boolean archived) {
         this.results=results;this.parent=parent;this.report=report;this.archived=archived;
         title=report!=null&&archived?"SAVED PROFILE":"SERVER PROFILE";
-        summary=report==null?"":report.admin()?String.format(Locale.ROOT,"%.2f MSPT | %.1f TPS | %d ticks",report.mspt(),report.tps(),report.ticks()):report.ticks()+" ticks | Permitted areas";
     }
     public int mount(LagScreen screen,String active) {
         int y=UiMetrics.PROFILE_TABS,right=screen.profileWidth()-screen.margin(),settings=UiFonts.labelWidth("Settings")+12,history=UiFonts.labelWidth("History")+12;
@@ -63,11 +65,29 @@ public final class ProfileNavigation {
         screen.canvas(g,title);
         screen.headerDivider(g);
         if(report==null)return;
-        long seconds=Math.max(0,(System.currentTimeMillis()-report.capturedAt())/1000);
-        if(age!=seconds){age=seconds;status=summary+" | "+(report.recording()?report.secondsRemaining()+"s remaining":seconds+"s ago");statusHint=status;var d=report.diagnostics();if(report.admin()&&d!=null&&d.coverage()!=null)statusHint+="\n"+d.coverage().describe(report.ticks(),d.callbackState());}
+        header(System.currentTimeMillis());
         int summaryY=screen.panelTop()+25;
         screen.text(g,status,screen.margin(),summaryY,screen.contentWidth(),UiTheme.SECONDARY);
         UiHints.region(g,screen.profileFont(),mx,my,screen.margin(),summaryY-2,screen.contentWidth(),12,statusHint);
+    }
+    String header(long now){
+        if(report==null)return "";
+        var latest=LagSenseClient.report;
+        var current=!archived&&latest!=null&&latest.id()==report.id()&&latest.admin()==report.admin()?latest:!archived&&prepared!=null?prepared:report;
+        var active=!archived&&latest!=null&&latest.recording()&&latest.admin()==report.admin()?latest:null;
+        boolean activeChanged=activeCapture!=active;
+        if(activeChanged){activeCapture=active;activeObservedAt=now;}
+        long activeSeconds=active==null?-1:Math.max(0,(now-activeObservedAt)/1000);
+        boolean changed=prepared!=current;if(changed)observedAt=now;
+        long seconds=Math.max(0,(now-(current.recording()?observedAt:current.capturedAt()))/1000);
+        if(changed||age!=seconds||activeChanged||activeAge!=activeSeconds){
+            prepared=current;age=seconds;activeAge=activeSeconds;
+            String summary=current.admin()?String.format(Locale.ROOT,"%.2f MSPT | %s | %d ticks",current.mspt(),current.tps()>0?String.format(Locale.ROOT,"%.1f TPS",current.tps()):"TPS unavailable",current.ticks()):current.ticks()+" ticks | Permitted areas";
+            String progress=active!=null&&active.id()!=current.id()?"New profile: "+Math.max(0,active.secondsRemaining()-activeSeconds)+"s remaining":current.recording()?Math.max(0,current.secondsRemaining()-seconds)+"s remaining":seconds+"s ago";
+            status=summary+" | "+progress;
+            statusHint=status;var d=current.diagnostics();if(current.admin()&&d!=null&&d.coverage()!=null)statusHint+="\n"+d.coverage().describe(current.ticks(),d.callbackState());
+        }
+        return status;
     }
     public void close(){Minecraft.getInstance().setScreen(parent);}
     boolean permitted(){return report==null||ClientAccess.allowed(report);}

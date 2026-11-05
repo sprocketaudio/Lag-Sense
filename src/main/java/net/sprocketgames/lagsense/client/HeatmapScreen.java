@@ -70,12 +70,12 @@ public final class HeatmapScreen extends LagScreen {
         if(archived){
             var destination=selectedDestination();
             if(destination!=null){var actions=TargetActions.actions(this,destination);int x=margin()+100;for(var item:actions){action(item.label(),x,footer(),item.label().equals("Mark")?48:36,item.run()).enabledWhen(item.enabled()).visibleWhen(item.visible()==null?()->true:item.visible());x+=item.label().equals("Mark")?52:40;}}
-        }else action("Mark",margin()+100,footer(),48,()->{if(selected!=null&&selected.hotspot()!=null){LagSenseClient.mark(report,selected.hotspot());minecraft.setScreen(null);}}).active=selected!=null&&selected.hotspot()!=null;
+        }else action("Mark",margin()+100,footer(),48,()->{if(selected!=null&&selected.hotspot()!=null){var destination=selectedDestination();if(destination!=null){if(report.admin())LagSenseClient.mark(destination);else ClientAccess.request(new ProfilerRequest("mark_chunk",report.id(),destination.index()));}minecraft.setScreen(null);}}).active=selected!=null&&selected.hotspot()!=null;
         action("Close",width-margin()-54,footer(),54,this::onClose);
     }
     private ComparisonTargets.Destination selectedDestination(){
         if(selected==null||report.chunks()==null)return null;
-        for(int i=0;i<report.chunks().size();i++){var source=report.chunks().get(i);if(source.dimension().equals(selected.dimension())&&source.x()==selected.x()&&source.z()==selected.z())return report.admin()?TargetActions.recorded(report,TargetActions.chunk(source),i,true):TargetActions.recorded(report,source.hotspot(),report.entries().indexOf(source.hotspot()),false);}
+        for(int i=0;i<report.chunks().size();i++){var source=report.chunks().get(i);if(source.dimension().equals(selected.dimension())&&source.x()==selected.x()&&source.z()==selected.z())return TargetActions.recorded(report,TargetActions.chunk(source),i,true);}
         return null;
     }
     private void zoom(int steps,double x,double y){var next=MapInteraction.zoom(viewport(),centerX,centerZ,cell,x,y,steps);centerX=next.x();centerZ=next.z();cell=next.cell();}

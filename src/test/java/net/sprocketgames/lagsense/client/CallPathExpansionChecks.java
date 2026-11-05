@@ -21,6 +21,7 @@ public final class CallPathExpansionChecks {
             check(data,true,"node:0",0);
             compactRows(data,font);
             alignedSamples(data,font);
+            loadingState(data);
             ProfilingUsabilityUiChecks.run(font);
             BackgroundCpuUiChecks.run();
             lazyResults(data);
@@ -30,12 +31,34 @@ public final class CallPathExpansionChecks {
             ThemeChecks.run();
             GradientUiChecks.run();
             WorldMarkerRenderChecks.run();
+            EntityMarkerChecks.run();
             ProfileStateChecks.run();
             ChunkOverlayChecks.run();
             HistoricalUiChecks.run();
             HtmlExportUiChecks.run();
         } finally { for(var entry:saved.entrySet())entry.getKey().set(null,entry.getValue()); }
         System.out.println("Call-path expansion checks passed (real hierarchy/running rows reveal inline details without mixing node and method IDs).");
+    }
+    private static void loadingState(CpuInvestigation data)throws Exception{
+        var old=LagSenseClient.report;
+        try{
+            var diagnostics=new net.sprocketgames.lagsense.Report.Diagnostics("Manual",0,0,List.of(),List.of(),List.of(),"disabled",data);
+            var capture=new net.sprocketgames.lagsense.Report(800,1000,20,2,true,false,List.of(),false,0,List.of(),20,diagnostics);
+            var task=new TaskScreen(null,capture,false);
+            if(task.pathData()!=data||Investigations.retainedCpu(capture)!=data)throw new AssertionError("Call Paths uses already transferred complete CPU data without a second server request");
+            Investigations.cpu(null,capture,false,value->{if(value!=data)throw new AssertionError("Retained CPU identity changed");},message->{throw new AssertionError(message);});
+            LagSenseClient.report=new net.sprocketgames.lagsense.Report(801,2000,20,2,true,false,List.of());
+            if(task.pathData()!=data||task.report().id()!=800)throw new AssertionError("A later scheduled capture cannot replace the displayed capture's retained call paths");
+            var summary=new net.sprocketgames.lagsense.Report(802,1000,20,2,true,false,List.of(),false,0,List.of(),20,new net.sprocketgames.lagsense.Report.Diagnostics("Manual",0,0,List.of(),List.of(),List.of(),"disabled",data.summary()));
+            if(Investigations.retainedCpu(summary)!=null)throw new AssertionError("A summary without its tree must still request the complete investigation");
+            var pendingTask=new TaskScreen(null,summary,false);var pending=new CallTreeScreen(pendingTask,CpuInvestigation.empty("pending"),null);
+            var error=TaskScreen.class.getDeclaredField("cpuError");error.setAccessible(true);error.set(pendingTask,"Profile expired. Open the latest results.");
+            if(!pending.emptyMessage().equals("Profile expired. Open the latest results."))throw new AssertionError("An investigation error replaces the pending message in the visible Call Paths screen");
+            error.set(pendingTask,"");var loading=TaskScreen.class.getDeclaredField("loadingCpu");loading.setAccessible(true);loading.setBoolean(pendingTask,true);
+            if(!pending.emptyMessage().equals("Loading call paths…"))throw new AssertionError("Network loading is distinct from server CPU analysis");
+            loading.setBoolean(pendingTask,false);var since=TaskScreen.class.getDeclaredField("cpuWaitingSince");since.setAccessible(true);since.setLong(pendingTask,System.nanoTime()-61_000_000_000L);pendingTask.pollPaths(pending);
+            if(!pending.emptyMessage().startsWith("CPU analysis timed out."))throw new AssertionError("Pending call paths cannot remain in a preparing state forever");
+        }finally{LagSenseClient.report=old;}
     }
     private static void nativeMapRaster() {
         var plan=new net.sprocketgames.lagsense.HeatmapPlan(7,9,9,9,2,0,0,List.of(new net.sprocketgames.lagsense.HeatmapPlan.Tile(0,0,0xff69f0ae)),UiTheme.PANEL,UiTheme.BACKGROUND);

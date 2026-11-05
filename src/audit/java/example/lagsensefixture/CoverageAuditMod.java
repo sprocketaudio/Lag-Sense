@@ -79,6 +79,7 @@ public final class CoverageAuditMod {
         try{
             if(!started&&++cycles>=10){
                 if(!PlayerWorkflowFixture.run(server))return;
+                if(!EntityTrackingFixture.ready(server))return;
                 prepare(server);started=true;
                 require(server.getCommands().getDispatcher().execute("lagsense profile",server.createCommandSourceStack())==1&&Profiler.active,"Shortcut command starts the normal manual capture");
                 shortcutDeadline=deadline();
@@ -126,6 +127,12 @@ public final class CoverageAuditMod {
         class CommandPlayer extends net.neoforged.neoforge.common.util.FakePlayer {
             boolean operator;
             CommandPlayer(){super(level,new com.mojang.authlib.GameProfile(UUID.randomUUID(),"HtmlTpAudit"));}
+            @Override public boolean teleportTo(net.minecraft.server.level.ServerLevel target,double x,double y,double z,Set<net.minecraft.world.entity.Relative> relative,float yaw,float pitch,boolean resetCamera){
+                boolean moved=super.teleportTo(target,x,y,z,relative,yaw,pitch,resetCamera);
+                // FakePlayer's packet listener discards same-level teleports instead of updating its pose.
+                if(moved)snapTo(x,y,z,yaw,pitch);
+                return moved;
+            }
             @Override public net.minecraft.server.permissions.PermissionSet permissions(){return operator?net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER:net.minecraft.server.permissions.PermissionSet.NO_PERMISSIONS;}
         }
         var player=new CommandPlayer();player.snapTo(80.5,81,80.5,0,0);
@@ -150,17 +157,42 @@ public final class CoverageAuditMod {
                 for(int x=-3;x<=3;x++)for(int z=-3;z<=3;z++)for(int y=-1;y<=3;y++)dimension.setBlockAndUpdate(centre.offset(x,y,z),(y==-1?Blocks.STONE:Blocks.AIR).defaultBlockState());
             }
         }
+        require(!LagSense.canReturn(player),"Return starts unavailable before a successful hotspot teleport");
         require(run.apply("lagsense tp location fixture:missing -17 81 -33")==0,"Missing dimension rejected");
         require(run.apply("lagsense tp location minecraft:overworld 30000001 81 0")==0,"Out-of-range arguments rejected");
         require(run.apply("lagsense tp location minecraft:overworld -17 20000000 -33")==0,"Dimension height checked on server");
         require(run.apply("lagsense tp location minecraft:overworld -17 81 -33")==1,"Capture-independent negative-coordinate TP succeeds near recorded Y");
+        require(LagSense.canReturn(player),"Successful hotspot TP makes the server return destination available");
+        require(run.apply("lagsense return")==1&&!LagSense.canReturn(player),"Using Return consumes the stored destination");
+        require(run.apply("lagsense return")==0&&!LagSense.canReturn(player),"Missing destinations keep Return unavailable");
+
         require(run.apply("lagsense tp location minecraft:the_nether -17 81 -33")==1,"Coordinate TP resolves the recorded dimension");
         require(player.level()==nether,"Cross-dimension TP uses the requested level");
         player.snapTo(player.getX(),81,player.getZ(),0,0);
         require(run.apply("lagsense tp chunk minecraft:overworld 5 5")==1,"Chunk-centre fallback uses safe local standing space");
+        player.snapTo(15.25,86.5,-4.75,37.5f,-13.25f);
+        var originalLevel=player.level();double oldX=player.getX(),oldY=player.getY(),oldZ=player.getZ();float oldYaw=player.getYRot(),oldPitch=player.getXRot();
+        for(var dimension:List.of(level,nether,server.getLevel(Level.END))){
+            dimension.getChunk(6,6);
+            for(int x=96;x<112;x++)for(int z=96;z<112;z++){
+                dimension.setBlockAndUpdate(new BlockPos(x,200,z),Blocks.STONE.defaultBlockState());
+                dimension.setBlockAndUpdate(new BlockPos(x,201,z),Blocks.AIR.defaultBlockState());
+                dimension.setBlockAndUpdate(new BlockPos(x,202,z),Blocks.AIR.defaultBlockState());
+            }
+            if(dimension!=nether){
+                for(int x=103;x<=104;x++)for(int z=103;z<=104;z++)dimension.setBlockAndUpdate(new BlockPos(x,200,z),Blocks.MAGMA_BLOCK.defaultBlockState());
+                require(run.apply("lagsense tp chunk "+dimension.dimension().identifier()+" 6 6")==1,"Surface chunk teleport works in Overworld and End");
+                require(player.level()==dimension&&player.getY()==201&&player.getBlockX()>=96&&player.getBlockX()<112&&player.getBlockZ()>=96&&player.getBlockZ()<112,"Chunk surface destination: expected "+dimension.dimension().identifier()+" Y 201, got "+player.level().dimension().identifier()+" "+player.position());
+                require(!dimension.getBlockState(player.blockPosition().below()).is(Blocks.MAGMA_BLOCK),"Unsafe central magma is skipped for another surface position");
+                require(run.apply("lagsense return")==1&&player.level()==originalLevel&&player.getX()==oldX&&player.getY()==oldY&&player.getZ()==oldZ&&player.getYRot()==oldYaw&&player.getXRot()==oldPitch,"Chunk Return restores exact coordinates, dimension, yaw and pitch");
+            }
+        }
+        require(run.apply("lagsense tp chunk minecraft:the_nether 5 5")==1&&player.level()==nether&&player.getY()<128,"Nether chunk TP uses an interior floor below the bedrock roof");
+        require(run.apply("lagsense return")==1,"Nether chunk Return restores the previous dimension");
         var blocked=new BlockPos(80,81,80);for(int x=-4;x<=4;x++)for(int z=-4;z<=4;z++)for(int y=-2;y<=4;y++)level.setBlockAndUpdate(blocked.offset(x,y,z),Blocks.STONE.defaultBlockState());
         require(run.apply("lagsense tp location minecraft:overworld 80 81 80")==0,"No safe landing fails instead of teleporting into solid blocks");
         player.operator=false;
+        require(!LagSense.canReturn(player),"Operator revocation hides any saved return destination");
         require(run.apply("lagsense tp location minecraft:overworld -17 81 -33")==0,"Permission changes are checked freshly");
         player.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
         System.out.println("HTML TP command fixture passed: operator-only, fresh permissions, negative coordinates, dimensions, bounds, chunk fallback and unsafe-landing rejection.");
@@ -169,6 +201,7 @@ public final class CoverageAuditMod {
     private static void prepare(MinecraftServer server)throws Exception{
         dispatchCompatibility();
         teleportCommands(server);
+        EntityTrackingFixture.run(server);
         var defaults=Profiler.settings;Profiler.settings=new ServerSettings(defaults.timer(),defaults.spikes(),false,defaults.history(),defaults.discord(),defaults.backups(),true,true);
         if(Profiler.delivery!=null)Profiler.delivery.close();
         var section=new ServerSettings.Delivery(true,0,5,0,0,"either","target","html","","degraded");

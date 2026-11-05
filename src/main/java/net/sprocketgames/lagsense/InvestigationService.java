@@ -40,7 +40,7 @@ public final class InvestigationService implements AutoCloseable {
         if(pending.size()>=4){sendError(id,request,"Details are busy. Try again shortly.");return;}
         pending.add(id);
         if(!admin(player)&&(Profiler.players==null||Profiler.players.view(player,request.report())==null)){error(id,request,"Profile access changed. Open it again.");return;}
-        if (request.archived()&&admin(player)) {
+        if (admin(player)&&(request.archived()||Profiler.latest==null||Profiler.latest.id()!=request.report())) {
             if (Profiler.archives == null) { error(id, request, "Saved profile unavailable."); return; }
             Profiler.archives.readInvestigation(request.report(), (report, failure) -> server.execute(() -> {
                 if (failure != null) { error(id, request, "Saved profile unavailable."); return; }

@@ -66,9 +66,7 @@ public final class DiscordMessage {
             +"\n\n**Severity: "+severity.label+"**\n\nCapture duration: "+duration+"\nCaptured: "+timestamp+"\nProfile ID: "+report.id();
         if(origin.equals("Spike")&&measured&&!performance.triggerReason().isBlank())details+="\n"+safe(performance.triggerReason(),300);
         components.add(text(details));
-        var notes=new ArrayList<String>();
-        if(report.truncated()||report.diagnostics()!=null&&(report.diagnostics().cpu().limited()||report.diagnostics().background()!=null&&report.diagnostics().background().limited()))notes.add("Some captured measurements are incomplete.");
-        if(report.diagnostics()!=null)report.diagnostics().notes().stream().filter(n->n.startsWith("Backup")||n.startsWith("CPU results limited")||n.startsWith("Event timings limited")).forEach(notes::add);
+        var notes=captureWarnings(report);
         String note=notes.isEmpty()?"":safe(String.join("\n",notes),600);
         var sections=new LinkedHashMap<String,List<String>>();
         if(individual)sections.put(settings.groupBy().equals("both")?"Highest-cost individuals":"Highest-cost contributors",contributorLines(individuals,false));
@@ -88,6 +86,25 @@ public final class DiscordMessage {
         }
         return message(components,severity.color,role,connection.avatarUrl(),gson);
     }
+    static List<String> captureWarnings(Report report){
+        var notes=new LinkedHashSet<String>();var diagnostics=report.diagnostics();
+        if(report.truncated())notes.add(diagnostics!=null&&diagnostics.notes().stream().anyMatch(n->n.startsWith("Capture stopped:"))?"Capture stopped early because its memory limit was reached.":"Some target measurements are missing from this capture.");
+        if(diagnostics!=null){
+            diagnostics.notes().stream().filter(n->n.startsWith("Backup")).forEach(notes::add);
+            var cpu=diagnostics.cpu();var background=diagnostics.background();
+            if(cpu.state().equals("unavailable"))notes.add("Server-thread CPU sampling was unavailable for this capture.");
+            if(diagnostics.callbackState().equals("unavailable"))notes.add("Event timings were unavailable for this capture.");
+            else if(diagnostics.notes().stream().anyMatch(n->n.startsWith("Event results limited:")||n.startsWith("Event timings limited:")||n.equals("Detailed callback limit reached.")))notes.add("Some event timings could not be recorded.");
+            if(missingPaths(cpu))notes.add("Some server-thread CPU call paths could not be retained.");
+            if(diagnostics.notes().contains("CPU results limited: some of the sampling period is missing because recording data was lost or reached its storage limit."))notes.add("Part of the CPU sampling period is missing.");
+            if(background!=null){
+                if(background.state().equals("unavailable"))notes.add("Background CPU sampling was unavailable for this capture.");
+                if(background.omittedSamples()>0||background.threads().stream().anyMatch(t->missingPaths(t.cpu())))notes.add("Some background CPU samples or call paths could not be retained.");
+            }
+        }
+        return List.copyOf(notes);
+    }
+    private static boolean missingPaths(CpuInvestigation cpu){return cpu!=null&&cpu.limits()!=null&&(cpu.limits().omittedPaths()>0||cpu.limits().omittedEdges()>0);}
     private static List<String> contributorLines(List<Row> rows,boolean combined){
         if(rows.isEmpty())return List.of("No measured contributors pass the filters.");
         return rows.stream().map(row->{

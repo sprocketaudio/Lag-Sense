@@ -14,7 +14,7 @@ public final class CaptureSettingsScreen extends SettingsPage {
     private boolean closeAfterApply;
     private EditBox interval, timerLength, tps, sustain, work, consecutive, spikeLength, cooldown;
     private String intervalValue, timerValue, tpsValue, sustainValue, workValue, ticksValue, spikeValue, cooldownValue;
-    public CaptureSettingsScreen(Screen parent, CaptureSettings state, String message) { super("Server captures"); this.parent = parent; confirmed=state; acceptDraft(state); this.message = message; }
+    public CaptureSettingsScreen(Screen parent, CaptureSettings state, String message) { super("Automatic Captures"); this.parent = parent; confirmed=state; acceptDraft(state); this.message = message; }
     private void acceptDraft(CaptureSettings state) {
         timerEnabled = state.timer().enabled(); spikesEnabled = state.spikes().enabled(); intervalValue = "" + state.timer().intervalMinutes(); timerValue = "" + state.timer().captureSeconds();
         var s = state.spikes(); tpsValue = "" + s.minimumTps(); sustainValue = "" + s.sustainSeconds(); workValue = "" + s.thresholdMs(); ticksValue = "" + s.consecutive(); spikeValue = "" + s.captureSeconds(); cooldownValue = "" + s.cooldownSeconds();
@@ -68,7 +68,7 @@ public final class CaptureSettingsScreen extends SettingsPage {
         rebuildWidgets();
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float partial) {
-        canvas(g, "SERVER CAPTURES"); footerMessage(g,message.isBlank()||message.equals("Unsaved changes")?dirty()?"Unsaved changes":"":message,mx,my);
+        canvas(g, "AUTOMATIC CAPTURES"); footerMessage(g,message.isBlank()||message.equals("Unsaved changes")?dirty()?"Unsaved changes":"":message,mx,my);
         headerDivider(g);
         super.extractRenderState(g, mx, my, partial);
     }

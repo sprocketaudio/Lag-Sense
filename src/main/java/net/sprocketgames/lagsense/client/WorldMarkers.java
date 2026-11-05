@@ -17,7 +17,7 @@ import net.neoforged.neoforge.client.event.*;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
-/** Through-wall outlines and timing captions only for the nearest intersected profiling cube. */
+/** Through-wall outlines, crosshair captions and persistent marked targets. */
 final class WorldMarkers {
     static final Font.DisplayMode TEXT_MODE=Font.DisplayMode.SEE_THROUGH;
     static final com.mojang.blaze3d.pipeline.RenderPipeline PIPELINE=com.mojang.blaze3d.pipeline.RenderPipeline.builder(net.minecraft.client.renderer.RenderPipelines.LINES_SNIPPET)
@@ -25,11 +25,13 @@ final class WorldMarkers {
         .withFragmentShader(Identifier.fromNamespaceAndPath("lagsense","core/world_lines"))
         .withDepthStencilState(new com.mojang.blaze3d.pipeline.DepthStencilState(com.mojang.blaze3d.platform.CompareOp.ALWAYS_PASS,false)).build();
     static final net.minecraft.client.renderer.rendertype.RenderType LINES=net.minecraft.client.renderer.rendertype.RenderType.create("lagsense_world_markers",net.minecraft.client.renderer.rendertype.RenderSetup.builder(PIPELINE).createRenderSetup());
-    static final float LINE_WIDTH=2,FOCUS_SCALE=1.35f;
+    static final float LINE_WIDTH=2.5f,FOCUS_LINE_WIDTH=8,MARK_LINE_WIDTH=4,FOCUS_SCALE=1.35f;
+    static final int MARK_COLOR=0xff63d9ff;
     private record Block(Report.Entry entry,MarkerPosition position,AABB box,int color) {}
     private record Label(Component text,int color,int width) {}
-    private record Text(Label label,MarkerPosition position,float scale,int offset,boolean focused,int color) {}
-    private record Frame(List<Block> outlines,List<Text> labels,long focusedPosition) {}
+    private record Text(Label label,MarkerPosition position,float scale,int offset,boolean focused,int color,boolean entity) {}
+    private record NearbyEntity(Report.Entry entry,MarkerPosition.Live position) {}
+    private record Frame(List<Block> outlines,List<Text> labels,long focusedPosition,AABB markedBox) {}
     private record LabelKey(Report.Entry entry,String prefix,int ticks) {}
     private static final ContextKey<Frame> FRAME=new ContextKey<>(Identifier.fromNamespaceAndPath("lagsense","world_markers"));
     private static final float[][] POINTS={{0,0,0},{1,0,0},{1,0,1},{0,0,1},{0,1,0},{1,1,0},{1,1,1},{0,1,1}};
@@ -83,23 +85,63 @@ final class WorldMarkers {
         int height=mc.getWindow().getGuiScaledHeight();labelBounds.begin(mc.getWindow().getGuiScaledWidth(),height);
         var labels=new ArrayList<Text>();var visibleOutlines=new ArrayList<Block>();outlinePositions.clear();
         var marked=LagSenseClient.waypoint;
-        if(marked!=null&&!marked.kind().equals("Entity")&&marked.dimension().equals(dimension)
-            &&(LagSenseClient.waypointTicks>0||MarkerEligibility.matches(marked,live(event.getLevel(),marked.x(),marked.y(),marked.z()))))
+        AABB markedBox=null;
+        if(marked!=null&&!marked.kind().equals("Entity")&&!marked.kind().equals("Chunk")&&marked.dimension().equals(dimension)
+            &&(LagSenseClient.waypointTicks>0||MarkerEligibility.matches(marked,live(event.getLevel(),marked.x(),marked.y(),marked.z())))){
             addOutline(visibleOutlines,marked,new MarkerPosition(marked.x(),marked.y(),marked.z(),1.3),camera,cameraState.cullFrustum);
+            var position=new MarkerPosition(marked.x(),marked.y(),marked.z(),1.3);
+            if(MarkerEligibility.inRange(position,camera.x,camera.y,camera.z,s.distance)){
+                markedBox=new AABB(marked.x(),marked.y(),marked.z(),marked.x()+1,marked.y()+1,marked.z()+1);
+                add(labels,marked,position,"> ",0,camera,cameraState.projectionMatrix,height);
+            }
+        }
         for(var block:outlines)if(MarkerEligibility.inRange(block.position(),camera.x,camera.y,camera.z,s.distance)&&cameraState.cullFrustum.isVisible(block.box())&&outlinePositions.add(BlockPos.asLong(block.entry().x(),block.entry().y(),block.entry().z())))visibleOutlines.add(block);
         // This list already contains only the current authorised, displayed cubes. No report-wide scan or vanilla hit result.
         var focused=focus(visibleOutlines,camera,new Vec3(event.getCamera().forwardVector()));
+        EntityMarkers.bind(event.getLevel(),markers,marked);
+        var ray=new MarkerRay(camera,new Vec3(event.getCamera().forwardVector()));
+        var cameraEntity=mc.getCameraEntity();UUID viewpoint=cameraEntity==null?null:cameraEntity.getUUID();
+        double nearestEntity=focused==null?Double.POSITIVE_INFINITY:ray.intersection(focused.box());
+        Report.Entry focusedEntity=null;
+        var nearbyEntities=new ArrayList<NearbyEntity>();
+        for(var entry:EntityMarkers.entries()){
+            if(!entityLabelVisible(entry.entityId(),viewpoint,mc.options.getCameraType().isFirstPerson()))continue;
+            int ticks=markedTicks(entry);
+            if(!MarkerEligibility.timing(entry,ticks,entry==marked?0:s.minimumMicros))continue;
+            var position=EntityMarkers.poseNear(entry.entityId(),event.getDeltaTracker().getGameTimeDeltaPartialTick(false),camera.x,camera.y,camera.z,s.distance);
+            if(position==null)continue;
+            if(entry==marked){markedBox=EntityMarkers.bounds(entry.entityId(),event.getDeltaTracker().getGameTimeDeltaPartialTick(false));addEntity(labels,entry,position,"> ",camera,cameraState.projectionMatrix,height);continue;}
+            if(EntityMarkers.nearbyLiving(entry.entityId(),position,camera.x,camera.y,camera.z))nearbyEntities.add(new NearbyEntity(entry,position));
+            var box=EntityMarkers.bounds(entry.entityId(),event.getDeltaTracker().getGameTimeDeltaPartialTick(false));
+            double hit=entityIntersection(ray,entry.entityId(),viewpoint,box);
+            if(hit<nearestEntity){nearestEntity=hit;focusedEntity=entry;}
+        }
+        if(focusedEntity!=null){
+            focused=null;
+            var position=EntityMarkers.pose(focusedEntity.entityId(),event.getDeltaTracker().getGameTimeDeltaPartialTick(false));
+            if(position!=null)addEntity(labels,focusedEntity,position,"",camera,cameraState.projectionMatrix,height);
+        }
+        for(var entity:nearbyEntities)if(entity.entry()!=focusedEntity)addEntity(labels,entity.entry(),entity.position(),"",camera,cameraState.projectionMatrix,height,false);
         long focusedPosition=Long.MIN_VALUE;
         if(focused!=null){
             var entry=focused.entry();focusedPosition=BlockPos.asLong(entry.x(),entry.y(),entry.z());
             boolean markedHere=marked!=null&&!marked.kind().equals("Entity")&&marked.dimension().equals(dimension)&&marked.x()==entry.x()&&marked.y()==entry.y()&&marked.z()==entry.z();
-            if(markedHere)add(labels,marked,focused.position(),"> ",0,camera,cameraState.projectionMatrix,height);
-            else{
+            if(!markedHere){
                 var exact=MarkerInspection.block(markers,dimension,entry.x(),entry.y(),entry.z(),live(event.getLevel(),entry.x(),entry.y(),entry.z()),value.ticks(),s.minimumMicros);int offset=0;
                 for(var measured:exact){add(labels,measured,focused.position(),exact.size()>1?measured.kind()+": ":"",offset,camera,cameraState.projectionMatrix,height);offset+=10;}
             }
         }
-        event.getRenderState().setRenderData(FRAME,new Frame(List.copyOf(visibleOutlines),List.copyOf(labels),focusedPosition));
+        event.getRenderState().setRenderData(FRAME,new Frame(List.copyOf(visibleOutlines),List.copyOf(labels),focusedPosition,markedBox));
+    }
+    static double entityIntersection(MarkerRay ray,UUID target,UUID viewpoint,AABB bounds){
+        return bounds==null||target.equals(viewpoint)?Double.POSITIVE_INFINITY:ray.intersection(bounds);
+    }
+    static boolean entityLabelVisible(UUID target,UUID viewpoint,boolean firstPerson){return !firstPerson||!target.equals(viewpoint);}
+    private void addEntity(List<Text> labels,Report.Entry entry,MarkerPosition.Live live,String prefix,Vec3 camera,Matrix4f projection,int height){
+        addEntity(labels,entry,live,prefix,camera,projection,height,true);
+    }
+    private void addEntity(List<Text> labels,Report.Entry entry,MarkerPosition.Live live,String prefix,Vec3 camera,Matrix4f projection,int height,boolean focused){
+        add(labels,entry,new MarkerPosition(live.x()-.5,live.y(),live.z()-.5,Math.max(1.3,live.height()+.3)),prefix,0,camera,projection,height,focused);
     }
     private static Block focus(List<Block> eligible,Vec3 origin,Vec3 direction){
         var ray=new MarkerRay(origin,direction);Block best=null;double nearest=Double.POSITIVE_INFINITY;
@@ -115,12 +157,15 @@ final class WorldMarkers {
         if(frustum.isVisible(box)&&outlinePositions.add(BlockPos.asLong(entry.x(),entry.y(),entry.z())))output.add(new Block(entry,position,box,TimingSeverity.color(entry.micros(markedTicks(entry)))));
     }
     private void add(List<Text> output,Report.Entry entry,MarkerPosition position,String prefix,int offset,Vec3 camera,Matrix4f projection,int height){
+        add(output,entry,position,prefix,offset,camera,projection,height,true);
+    }
+    private void add(List<Text> output,Report.Entry entry,MarkerPosition position,String prefix,int offset,Vec3 camera,Matrix4f projection,int height,boolean focused){
         int ticks=prefix.startsWith("> ")&&LagSenseClient.waypointTicks>0?LagSenseClient.waypointTicks:report.ticks();
         var s=LagSenseClient.settings;if(!MarkerEligibility.timing(entry,ticks,prefix.startsWith("> ")?0:s.minimumMicros)||!MarkerEligibility.inRange(position,camera.x,camera.y,camera.z,s.distance))return;
         projected.set((float)(position.x()+.5-camera.x),(float)(position.y()+position.labelHeight()-camera.y),(float)(position.z()+.5-camera.z),1);projectionView.transform(projected);
         if(projected.w<=.01||projected.z < -projected.w||projected.z>projected.w)return;
         double pixelsPerUnit=Math.abs(projection.m11())*height/(2*projected.w);float scale=(float)Math.min(.025,12/(9*Math.max(.001,pixelsPerUnit)));
-        scale*=FOCUS_SCALE;
+        if(focused)scale*=FOCUS_SCALE;
         double cost=entry.micros(ticks);
         var key=new LabelKey(entry,prefix,ticks);var label=textCache.get(key);
         if(label==null){var text=Component.literal(String.format(Locale.ROOT,"%s%.1f µs/t",prefix,cost)).withStyle(style->style.withFont(UiFonts.MONO));label=new Label(text,TimingSeverity.color(cost),Minecraft.getInstance().font.width(text));textCache.put(key,label);}
@@ -128,7 +173,7 @@ final class WorldMarkers {
         double px=(projected.x/projected.w+1)*Minecraft.getInstance().getWindow().getGuiScaledWidth()/2.0-label.width()*pixels/2;
         double py=(1-projected.y/projected.w)*height/2.0+offset*pixels;
         if(!labelBounds.offer(px,py,label.width()*pixels,9*pixels,true))return;
-        output.add(new Text(label,position,scale,offset,true,label.color()));
+        output.add(new Text(label,position,scale,offset,focused,label.color(),entry.kind().equals("Entity")));
     }
     // LevelRenderState resets custom data before AfterLevel, so retain this frame at submission time.
     void capture(SubmitCustomGeometryEvent event){pending=event.getLevelRenderState().getRenderData(FRAME);}
@@ -139,7 +184,7 @@ final class WorldMarkers {
     static int outlineColor(int color,boolean focused,double distance,double range){
         if(focused)return color;
         double t=Math.clamp(distance/Math.max(1,range),0,1);
-        double opacity=.22-(.22-.035)*t*t*(3-2*t);
+        double opacity=.45-(.45-.10)*t*t*(3-2*t);
         return (Math.max(1,(int)Math.round((color>>>24)*opacity))<<24)|(color&0xffffff);
     }
     void submit(net.minecraft.client.renderer.state.level.LevelRenderState state,PoseStack stack,WorldOverlayDraw collector){
@@ -148,17 +193,27 @@ final class WorldMarkers {
             for(var block:frame.outlines()){
                 var e=block.entry();float x=(float)(e.x()-camera.pos.x),y=(float)(e.y()-camera.pos.y),z=(float)(e.z()-camera.pos.z);boolean focused=BlockPos.asLong(e.x(),e.y(),e.z())==frame.focusedPosition();
                 double distance=Math.sqrt((x+.5)*(x+.5)+(y+.5)*(y+.5)+(z+.5)*(z+.5));
-                int color=outlineColor(block.color(),focused,distance,LagSenseClient.settings.distance);float lineWidth=focused?3:LINE_WIDTH;
+                int color=outlineColor(block.color(),focused,distance,LagSenseClient.settings.distance);float lineWidth=focused?FOCUS_LINE_WIDTH:LINE_WIDTH;
                 for(var edge:EDGES){var a=POINTS[edge[0]];var b=POINTS[edge[1]];
                     vertices.addVertex(pose,x+a[0],y+a[1],z+a[2]).setColor(color).setNormal(pose,b[0]-a[0],b[1]-a[1],b[2]-a[2]).setLineWidth(lineWidth);
                     vertices.addVertex(pose,x+b[0],y+b[1],z+b[2]).setColor(color).setNormal(pose,b[0]-a[0],b[1]-a[1],b[2]-a[2]).setLineWidth(lineWidth);
                 }
             }
         });
+        if(frame.markedBox()!=null)collector.submitCustomGeometry(stack,LINES,(pose,vertices)->{
+            var box=frame.markedBox();
+            for(var edge:EDGES){var a=POINTS[edge[0]];var b=POINTS[edge[1]];
+                float ax=(float)(box.minX+(box.maxX-box.minX)*a[0]-camera.pos.x),ay=(float)(box.minY+(box.maxY-box.minY)*a[1]-camera.pos.y),az=(float)(box.minZ+(box.maxZ-box.minZ)*a[2]-camera.pos.z);
+                float bx=(float)(box.minX+(box.maxX-box.minX)*b[0]-camera.pos.x),by=(float)(box.minY+(box.maxY-box.minY)*b[1]-camera.pos.y),bz=(float)(box.minZ+(box.maxZ-box.minZ)*b[2]-camera.pos.z);
+                float length=(float)Math.sqrt((bx-ax)*(bx-ax)+(by-ay)*(by-ay)+(bz-az)*(bz-az));if(length==0)continue;
+                vertices.addVertex(pose,ax,ay,az).setColor(MARK_COLOR).setNormal(pose,(bx-ax)/length,(by-ay)/length,(bz-az)/length).setLineWidth(MARK_LINE_WIDTH);
+                vertices.addVertex(pose,bx,by,bz).setColor(MARK_COLOR).setNormal(pose,(bx-ax)/length,(by-ay)/length,(bz-az)/length).setLineWidth(MARK_LINE_WIDTH);
+            }
+        });
         collector.flush();
         boolean focusPass=false;
-        for(var placed:frame.labels()){
-            if(!placed.focused())continue;
+        for(int pass=0;pass<2;pass++)for(var placed:frame.labels()){
+            if(placed.focused()!=(pass==1)||!placed.focused()&&!placed.entity())continue;
             if(placed.focused()&&!focusPass){collector.flush();focusPass=true;}
             var p=placed.position();var label=placed.label();stack.pushPose();
             try{stack.translate(p.x()+.5-camera.pos.x,p.y()+p.labelHeight()-camera.pos.y,p.z()+.5-camera.pos.z);stack.mulPose(camera.orientation);stack.scale(placed.scale(),-placed.scale(),placed.scale());collector.submitMarkerText(stack,-label.width()/2f,placed.offset(),label.text().getVisualOrderText(),placed.color());}

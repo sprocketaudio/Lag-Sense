@@ -73,6 +73,8 @@ public final class LagSense {
         NeoForge.EVENT_BUS.addListener(this::commands);
     }
     public static boolean isAdmin(CommandSourceStack source) { return Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(source); }
+    public static boolean canReturn(ServerPlayer player){return isAdmin(player.createCommandSourceStack())&&returns.containsKey(player.getUUID());}
+    private static void syncReturn(ServerPlayer player){if(Profiler.players!=null&&Profiler.hasClient(player))Profiler.players.renew(player);}
     private int message(CommandSourceStack source, String text) { return CommandOutput.send(source, text); }
     private int fail(CommandSourceStack source, String text) { return CommandOutput.fail(source, text); }
     private int help(CommandSourceStack source) {
@@ -142,7 +144,7 @@ public final class LagSense {
                         return teleportChunk(player,LongArgumentType.getLong(c,"report"),IntegerArgumentType.getInteger(c,"index"));
                     }))))
             .then(Commands.literal("return").requires(LagSense::isAdmin).executes(c -> {
-                var player = c.getSource().getPlayerOrException(); if(!isAdmin(c.getSource()))return fail(c.getSource(),"Operator access required.");var point = returns.remove(player.getUUID());
+                var player = c.getSource().getPlayerOrException(); if(!isAdmin(c.getSource()))return fail(c.getSource(),"Operator access required.");var point = returns.remove(player.getUUID());syncReturn(player);
                 if (point == null) return fail(c.getSource(), "No return position saved.");
                 player.teleportTo(point.level, point.x, point.y, point.z, Set.of(), point.yaw, point.pitch, true); return message(c.getSource(), "Returned.");
             })));
@@ -235,8 +237,13 @@ public final class LagSense {
         var level = player.level().getServer().getLevel(ResourceKey.create(Registries.DIMENSION, Identifier.parse(e.dimension())));
         if (level == null) return fail(player.createCommandSourceStack(), "Dimension unavailable.");
         var pos=new BlockPos(e.x(),e.y(),e.z());
-        if(!level.getWorldBorder().isWithinBounds(pos))return fail(player.createCommandSourceStack(),"Target is outside the world border.");
-        if(e.y()<level.getMinY()||e.y()>=level.getMaxY())return fail(player.createCommandSourceStack(),"Target is outside the dimension's height limits.");
+        boolean chunk=e.kind().equals("Chunk");
+        if(!chunk&&!level.getWorldBorder().isWithinBounds(pos))return fail(player.createCommandSourceStack(),"Target is outside the world border.");
+        if(!chunk&&(e.y()<level.getMinY()||e.y()>=level.getMaxY()))return fail(player.createCommandSourceStack(),"Target is outside the dimension's height limits.");
+        if(chunk){
+            var border=level.getWorldBorder();int left=(e.x()>>4)*16,top=(e.z()>>4)*16;
+            if(left>=border.getMaxX()||left+16<=border.getMinX()||top>=border.getMaxZ()||top+16<=border.getMinZ())return fail(player.createCommandSourceStack(),"Chunk is outside the world border.");
+        }
         var dimensions=player.getDimensions(net.minecraft.world.entity.Pose.STANDING);
         java.util.function.Predicate<LocalTeleport.Position> canStand=p->{
             var feet=BlockPos.containing(p.x(),p.y(),p.z());
@@ -246,10 +253,37 @@ public final class LagSense {
             return level.noCollision(player,box)&&!level.containsAnyLiquid(box)&&level.getFluidState(feet.below()).isEmpty()
                 &&!level.getBlockState(feet.below()).getCollisionShape(level,feet.below()).isEmpty();
         };
-        var landing=LocalTeleport.choose(e,canStand);
+        var landing=chunk?chunkLanding(player,level,e.x()>>4,e.z()>>4,canStand):LocalTeleport.choose(e,canStand);
+        if(landing==null)return fail(player.createCommandSourceStack(),"No safe position found in this chunk.");
         if(requireSafe&&!canStand.test(landing))return fail(player.createCommandSourceStack(),"No safe position found near the recorded location.");
         returns.put(player.getUUID(),new ReturnPoint(player.level(),player.getX(),player.getY(),player.getZ(),player.getYRot(),player.getXRot()));
         player.teleportTo(level,landing.x(),landing.y(),landing.z(),Set.of(),player.getYRot(),player.getXRot(),true);
+        syncReturn(player);
         return message(player.createCommandSourceStack(), "Teleported to hotspot.\nReturn: /lagsense return");
+    }
+    private static LocalTeleport.Position chunkLanding(ServerPlayer player,net.minecraft.server.level.ServerLevel level,int x,int z,java.util.function.Predicate<LocalTeleport.Position> standing){
+        var chunk=level.getChunk(x,z);
+        int top=level.dimensionType().hasCeiling()?Math.min(level.getMaxY(),level.getMinY()+level.dimensionType().logicalHeight()):level.getMaxY();
+        var terrain=new ChunkTeleport.Terrain(){
+            public int minimumY(){return level.getMinY();}
+            public int maximumY(){return top;}
+            public int surfaceY(int bx,int bz){return chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,bx&15,bz&15)+1;}
+        };
+        var feet=new BlockPos.MutableBlockPos();
+        return ChunkTeleport.choose(x,z,terrain,p->{
+            feet.set((int)Math.floor(p.x()),(int)p.y(),(int)Math.floor(p.z()));
+            var floor=feet.below();
+            if(!level.getBlockState(floor).isFaceSturdy(level,floor,net.minecraft.core.Direction.UP))return false;
+            if(unsafeFloor(level.getBlockState(floor))||unsafeFloor(level.getBlockState(feet))||unsafeFloor(level.getBlockState(feet.above())))return false;
+            return standing.test(p);
+        });
+    }
+    private static boolean unsafeFloor(net.minecraft.world.level.block.state.BlockState state){
+        return state.is(net.minecraft.world.level.block.Blocks.MAGMA_BLOCK)||state.is(net.minecraft.world.level.block.Blocks.CACTUS)
+            ||state.is(net.minecraft.world.level.block.Blocks.CAMPFIRE)||state.is(net.minecraft.world.level.block.Blocks.SOUL_CAMPFIRE)
+            ||state.is(net.minecraft.world.level.block.Blocks.FIRE)||state.is(net.minecraft.world.level.block.Blocks.SOUL_FIRE)
+            ||state.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW)||state.is(net.minecraft.world.level.block.Blocks.SWEET_BERRY_BUSH)
+            ||state.is(net.minecraft.world.level.block.Blocks.WITHER_ROSE)||state.is(net.minecraft.world.level.block.Blocks.POINTED_DRIPSTONE)
+            ||state.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)||state.is(net.minecraft.world.level.block.Blocks.END_PORTAL);
     }
 }

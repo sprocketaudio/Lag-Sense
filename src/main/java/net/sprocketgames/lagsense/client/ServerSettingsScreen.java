@@ -126,12 +126,13 @@ public final class ServerSettingsScreen extends SettingsPage {
             toggleField(p+".enabled","Enabled",x,y,col,"Deliver results for "+tab.toLowerCase(Locale.ROOT)+" captures.");
             y+=40;
             field(p+".cooldown","Delivery cooldown seconds",x,y,col,"[0-9]*",5,"Minimum time between Discord deliveries for this capture type.");
-            field(p+".top","Top results",right,y,col,"[0-9]*",2,"Number of results in each contributor section and the chunk list. Both applies this limit separately to individuals and types.");y+=48;
+            field(p+".top","Top results",right,y,col,"[0-9]*",2,"Number of results in each contributor section and the chunk list.");y+=48;
             field(p+".ms","Minimum ms/t",x,y,col,"[0-9.]*",8,"Only include results using this many milliseconds per tick or more. Set to 0 to turn off this filter.");
             field(p+".percent","Minimum tick %",right,y,col,"[0-9.]*",8,"Only include results using this percentage of server tick time or more. Set to 0 to turn off this filter.");y+=48;
             choice(p+".match","Match",x,y,col,List.of("either","both"),List.of("Either","Both"),"Either includes results that pass at least one enabled filter. Both includes results that pass every enabled filter.");
             choice(p+".group","Group",right,y,col,List.of("target","type","both"),List.of("Individual","Type","Both"),"Show individual targets, combined types, or separate lists of both.");y+=32;
-            choice(p+".attachment","Report file",x,y,col,List.of("none","html","json","csv"),List.of("None","HTML","JSON","CSV"),"Attach one report file. None sends the Discord summary without a file.");
+            label("Attach file",x,y,col);
+            choice(p+".attachment","",x,y+14,col,List.of("none","html","json","csv"),List.of("None","HTML","JSON","CSV"),"Attach one report file. None sends the Discord summary without a file.");
             label("Mention severity",right,y,col);
             choice(p+".mention","",right,y+14,col,List.of("never","critical","degraded","warning","always"),List.of("Never","Critical only","Degraded or worse","Warning or worse","Always"),"When to mention the configured role. Reports still send below this level. Insufficient Data only mentions with Always.");y+=40;
             field(p+".role","Mention role ID",x,y,contentWidth(),"[0-9]*",22,"Optional Discord role to mention for this capture type. Leave blank for no mention.");y+=48;

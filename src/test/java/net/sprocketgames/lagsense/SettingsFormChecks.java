@@ -8,6 +8,7 @@ final class SettingsFormChecks {
     static void run(com.google.gson.Gson gson)throws Exception {
         require(SettingsMenu.categories(true).equals(List.of(SettingsMenu.Category.HUD,SettingsMenu.Category.CAPTURES,SettingsMenu.Category.DISCORD,SettingsMenu.Category.ADVANCED)),"Admin Settings has exactly four categories, with no History or Frame profiling entry");
         require(SettingsMenu.categories(false).equals(List.of(SettingsMenu.Category.HUD)),"Local/player Settings cannot expose server editors");
+        require(SettingsMenu.Category.CAPTURES.label.equals("Automatic Captures"),"Automatic capture settings use their explicit menu label");
         String webhook="https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwx";
         var defaults=ServerSettings.defaults();
         var configured=new ServerSettings(defaults.timer(),defaults.spikes(),false,defaults.history(),new ServerSettings.Discord(false,webhook,"Fixture",defaults.discord().timer(),defaults.discord().spikes(),defaults.discord().manual()),defaults.backups(),true,false);

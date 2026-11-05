@@ -12,13 +12,14 @@ final class TargetActions {
     static Report.Entry chunk(Report.Chunk chunk){var mc=Minecraft.getInstance();return HistoricalTargets.chunk(chunk,mc!=null&&mc.player!=null?mc.player.getBlockY():null);}
     static boolean permitted(boolean chunk){var mc=Minecraft.getInstance();return ClientAccess.admin()&&mc!=null&&mc.player!=null&&mc.getConnection()!=null&&permitted(mc.getConnection().getCommands(),chunk);}
     static boolean permitted(com.mojang.brigadier.CommandDispatcher<?> commands,boolean chunk){return commands.findNode(java.util.List.of("lagsense",chunk?"tpchunk":"tp"))!=null;}
+    static boolean canReturn(){return ClientAccess.canReturn()&&permitted(false);}
     private static Entity live(Report.Entry target){return EntityMarkers.current(target);}
     static boolean canTravel(ComparisonTargets.Destination destination){
         return destination!=null&&HistoricalTargets.positioned(destination.target())&&permitted(destination.chunk());
     }
     static UiResults.Action[] actions(LagScreen parent,ComparisonTargets.Destination destination){
         return new UiResults.Action[]{
-            new UiResults.Action("Mark",()->{if(destination==null)return;if(!ClientAccess.admin()){ClientAccess.mark(destination.capture(),destination.target());}else LagSenseClient.mark(destination);var mc=Minecraft.getInstance();if(mc!=null)mc.setScreen(null);}).enabledWhen(()->destination!=null),
+            new UiResults.Action("Mark",()->{if(destination==null)return;if(!ClientAccess.admin()){if(destination.chunk())ClientAccess.request(new ProfilerRequest("mark_chunk",destination.capture(),destination.index()));else ClientAccess.mark(destination.capture(),destination.target());}else LagSenseClient.mark(destination);var mc=Minecraft.getInstance();if(mc!=null)mc.setScreen(null);}).enabledWhen(()->destination!=null),
             new UiResults.Action("TP",()->teleport(parent,destination)).enabledWhen(()->canTravel(destination)).visibleWhen(()->destination!=null&&permitted(destination.chunk()))
         };
     }

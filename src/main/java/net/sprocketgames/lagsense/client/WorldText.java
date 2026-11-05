@@ -36,7 +36,7 @@ final class WorldText {
             .withTexture("Sampler0",atlas,()->RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR)).createRenderSetup());
         TYPES.put(original,value);return value;
     }
-    static int background(int color){return (Math.round((color>>>24)*.6f)<<24)|0x08080b;}
+    static int background(int color){return 0xff08080b;}
     static Font.PreparedText prepare(Font font,FormattedCharSequence text,float x,float y,int color){
         return font.prepareText(text,x,y,color,false,false,background(color));
     }

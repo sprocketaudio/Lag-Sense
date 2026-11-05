@@ -60,6 +60,17 @@ public final class PlayerWorkflowFixture {
             if(reports().isEmpty())return false;
             var scoped=report();check(scoped.id()==CAPTURE&&scoped.entries().size()==3&&!scoped.admin()&&scoped.mspt()==0&&scoped.tps()==0&&scoped.diagnostics()==null,"Latest permitted persisted capture is restored after login, skipping a newer private-only capture");
             check(scoped.entries().stream().noneMatch(e->e.type().contains("private"))&&scoped.chunks().size()==2,"Chunk totals contain no unrelated data or public-area overreach");
+            var chunkMark=ProfilerUi.class.getDeclaredMethod("markChunk",ServerPlayer.class,long.class,int.class);chunkMark.setAccessible(true);
+            for(int i=0;i<scoped.chunks().size();i++){
+                chunkMark.invoke(ui,player,CAPTURE,i);var chunk=scoped.chunks().get(i);
+                check(state().marker()!=null&&state().marker().kind().equals("Chunk")&&state().marker().x()==chunk.x()*16+8&&state().marker().z()==chunk.z()*16+8&&state().marker().nanos()==chunk.nanos(),"Scoped chunk marks use granted chunk centres and permitted timings only");
+                for(int tick=0;tick<20;tick++)ui.tick();
+                check(state().marker()!=null,"A partial public area's chunk mark remains valid without granting unrelated targets");
+            }
+            var grantedMark=state().marker();
+            for(int i:new int[]{-1,scoped.chunks().size(),Integer.MAX_VALUE})chunkMark.invoke(ui,player,CAPTURE,i);
+            chunkMark.invoke(ui,player,CAPTURE-1,0);
+            check(state().marker().equals(grantedMark),"Forged chunk indexes and stale capture IDs cannot replace a valid scoped mark");
             for(int i=0;i<scoped.entries().size();i++){mark(player,CAPTURE,i);check(state().marker()!=null,"Mark works for measured owned/public entries");}
             for(int index:new int[]{-1,scoped.entries().size(),Integer.MAX_VALUE}){mark(player,CAPTURE,index);check(state().marker()==null,"Forged indexes do not select private targets");}
             mark(player,CAPTURE-1,0);check(state().marker()==null,"Stale report IDs cannot mark targets");
@@ -79,7 +90,9 @@ public final class PlayerWorkflowFixture {
             int index=report().entries().indexOf(report().entries().stream().filter(e->e.entityId()!=null).findFirst().orElseThrow());
             check(server.overworld().getEntity(entity.getUUID())==entity&&!entity.isRemoved(),"Moving-entity fixture remains loaded and UUID-resolvable");
             entity.snapTo(49,81,49,0,0);mark(player,CAPTURE,index);check(state().marker()==null,"A UUID-matched entity outside the permitted area cannot be marked");entity.snapTo(4,81,4,0,0);mark(player,CAPTURE,index);check(state().marker()!=null,"UUID marker works when its current location is permitted");
-            entity.snapTo(49,81,49,0,0);for(int i=0;i<20;i++)ui.tick();check(state().markerChanged()&&state().marker()==null,"Marker refresh revokes moving-entity access");
+            check(state().trackedEntity()!=null&&state().trackedEntity().entityId().equals(entity.getUUID()),"An authorised player receives the marked entity's current location");
+            entity.snapTo(7.25,82,7.75,0,0);for(int i=0;i<20;i++)ui.tick();check(state().trackedEntity()!=null&&state().trackedEntity().x()==7.25&&state().marker().x()==4,"Scoped marker movement updates current location without altering captured coordinates");
+            entity.snapTo(49,81,49,0,0);for(int i=0;i<20;i++)ui.tick();check(state().markerChanged()&&state().marker()==null&&state().trackedEntity()==null,"Marker refresh revokes moving-entity access and location updates");
             owns=false;for(int i=0;i<20;i++)ui.tick();check(state().clear()&&ui.view(player,CAPTURE)==null,"Ownership changes invalidate cached reports and markers");mark(player,CAPTURE,0);check(state().marker()==null,"Stale cached grants cannot bypass revoked ownership");
             owns=true;ui.forget(player.getUUID());packets.clear();ui.open(player);stage=5;return false;
         }

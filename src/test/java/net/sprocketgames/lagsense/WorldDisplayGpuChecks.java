@@ -64,10 +64,10 @@ public final class WorldDisplayGpuChecks {
             var whitePixels=MemoryUtil.memAlloc(64);while(whitePixels.hasRemaining())whitePixels.put((byte)255);whitePixels.flip();glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,4,4,0,GL_RGBA,GL_UNSIGNED_BYTE,whitePixels);MemoryUtil.memFree(whitePixels);
             var backgroundMethod=Class.forName("net.sprocketgames.lagsense.client.WorldText").getDeclaredMethod("background",int.class);backgroundMethod.setAccessible(true);
             for(int backdrop:new int[]{0x9ac0ee,0x111417,0x589449,0xb5a283})for(float alpha:new float[]{.24f,1}){
-                int ink=(Math.round(alpha*255)<<24)|0x66ddaa,backing=(int)backgroundMethod.invoke(null,ink);float backingAlpha=(backing>>>24)/255f;
+                int ink=(Math.round(alpha*255)<<24)|0x66ddaa,backing=(int)backgroundMethod.invoke(null,ink);float backingAlpha=(backing>>>24)/255f;check(backingAlpha==1,"Timing-label backgrounds are fully opaque");
                 glUseProgram(rgba);glBindTexture(GL_TEXTURE_2D,white);colour(rgba,backing,backingAlpha);
                 glClearColor((backdrop>>16&255)/255f,(backdrop>>8&255)/255f,(backdrop&255)/255f,1);glDepthMask(true);glClearDepth(.05);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDepthMask(false);glDrawArrays(GL_TRIANGLES,0,6);glFinish();
-                int[] actual=pixel();int channel=0;for(int shift:new int[]{16,8,0}){double expected=(backing>>shift&255)*backingAlpha+(backdrop>>shift&255)*(1-backingAlpha);check(Math.abs(actual[channel++]-expected)<3,"The shipped custom RGBA shader renders native white-atlas background effects as translucent dark rectangles through depth");}
+                int[] actual=pixel();int channel=0;for(int shift:new int[]{16,8,0}){double expected=(backing>>shift&255)*backingAlpha+(backdrop>>shift&255)*(1-backingAlpha);check(Math.abs(actual[channel++]-expected)<3,"The shipped custom RGBA shader renders native white-atlas background effects as opaque near-black rectangles through depth");}
                 var depth=MemoryUtil.memAllocFloat(1);try{glReadPixels(32,32,1,1,GL_DEPTH_COMPONENT,GL_FLOAT,depth);check(Math.abs(depth.get(0)-.05)<.001,"Dark backing never modifies the world depth buffer");}finally{MemoryUtil.memFree(depth);}
                 results.add("Dark backing background="+Integer.toHexString(backdrop)+" alpha="+backingAlpha+" RGB="+Arrays.toString(actual));
             }

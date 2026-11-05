@@ -4,7 +4,7 @@ import java.util.List;
 
 public final class SettingsMenu {
     public enum Category {
-        HUD("Display"), CAPTURES("Captures"), DISCORD("Discord notifications"), ADVANCED("Advanced");
+        HUD("Display"), CAPTURES("Automatic Captures"), DISCORD("Discord notifications"), ADVANCED("Advanced");
         public final String label;
         Category(String label){this.label=label;}
     }

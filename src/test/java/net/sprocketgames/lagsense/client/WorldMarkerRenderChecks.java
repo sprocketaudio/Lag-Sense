@@ -26,7 +26,7 @@ final class WorldMarkerRenderChecks {
         }
         var entry=new Report.Entry("Entity","minecraft:item","minecraft:overworld",0,0,0,1000,1,UUID.randomUUID());
         var label=record(nested("Label"),Component.literal("0.0 µs/t").withStyle(s->s.withFont(UiFonts.MONO)),TimingSeverity.color(entry.micros(100)),48);
-        var text=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f,0,true,TimingSeverity.color(.01));var frame=record(nested("Frame"),List.copyOf(blocks),List.of(text),Long.MIN_VALUE);
+        var text=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f,0,true,TimingSeverity.color(.01),true);var frame=record(nested("Frame"),List.copyOf(blocks),List.of(text),Long.MIN_VALUE,null);
         var field=WorldMarkers.class.getDeclaredField("FRAME");field.setAccessible(true);ContextKey key=(ContextKey)field.get(null);state.setRenderData(key,frame);
         var textCalls=new ArrayList<Object[]>();var geometry=new ArrayList<SubmitNodeCollector.CustomGeometryRenderer>();
         var collector=(WorldOverlayDraw)Proxy.newProxyInstance(WorldOverlayDraw.class.getClassLoader(),new Class[]{WorldOverlayDraw.class},(proxy,method,args)->{
@@ -43,15 +43,30 @@ final class WorldMarkerRenderChecks {
         int[] vertices={0},colours={0},widths={0};
         var vertex=(VertexConsumer)Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(),new Class[]{VertexConsumer.class},(proxy,method,args)->{
             if(method.getName().equals("addVertex"))vertices[0]++;
-            if(method.getName().equals("setColor")){colours[0]++;int alpha=(int)args[0]>>>24;check(alpha>0&&alpha<=57,"All ordinary outlines remain present at subdued opacity");}
-            if(method.getName().equals("setLineWidth")){widths[0]++;check(((Number)args[0]).floatValue()==2,"Thin existing outline width remains two");}
+            if(method.getName().equals("setColor")){colours[0]++;int alpha=(int)args[0]>>>24;check(alpha>=25&&alpha<=115,"All ordinary outlines remain present at subdued opacity");}
+            if(method.getName().equals("setLineWidth")){widths[0]++;check(((Number)args[0]).floatValue()==2.5f,"Ordinary outlines use a clearer two-and-a-half-pixel width");}
             return method.getReturnType()==void.class?null:proxy;
         });
         geometry.getFirst().render(stack.last(),vertex);check(vertices[0]==24000&&colours[0]==24000&&widths[0]==24000,"Every retained outline receives its original twelve thin coloured edges without a top-N cap");
-        state.setRenderData(key,record(nested("Frame"),List.of(),List.of(text),Long.MIN_VALUE));textCalls.clear();geometry.clear();overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);
+        state.setRenderData(key,record(nested("Frame"),List.of(),List.of(text),Long.MIN_VALUE,null));textCalls.clear();geometry.clear();overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);
         check(textCalls.size()==1&&geometry.isEmpty(),"Moving entity labels have no block-outline geometry");
-        var nearText=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f,0,false,0xad000000|(TimingSeverity.color(.01)&0xffffff));
-        var focusText=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f*WorldMarkers.FOCUS_SCALE,0,true,TimingSeverity.color(.01));
+        var livingText=record(nested("Text"),label,new MarkerPosition(3,65,4,2.25),.025f,0,false,TimingSeverity.color(.01),true);
+        state.setRenderData(key,record(nested("Frame"),List.of(),List.of(livingText),Long.MIN_VALUE,null));textCalls.clear();geometry.clear();
+        overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);
+        check(textCalls.size()==1&&geometry.isEmpty(),"Nearby living entity timings render with no focus or outlines");
+        for(var box:List.of(new AABB(3,65,4,4,66,5),new AABB(3.2,65,4.1,3.8,66.95,4.7))){
+            state.setRenderData(key,record(nested("Frame"),List.of(),List.of(text),Long.MIN_VALUE,box));textCalls.clear();geometry.clear();
+            overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);
+            check(geometry.size()==1&&textCalls.size()==1,"An explicit block or entity mark renders a persistent outline and timing even without crosshair focus");
+            int[] markedVertices={0};var markedSink=(VertexConsumer)Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(),new Class[]{VertexConsumer.class},(proxy,method,args)->{
+                if(method.getName().equals("addVertex"))markedVertices[0]++;
+                if(method.getName().equals("setColor"))check((int)args[0]==WorldMarkers.MARK_COLOR,"Explicit marks use bright blue independently of timing severity or theme");
+                if(method.getName().equals("setLineWidth"))check(((Number)args[0]).floatValue()==4,"Marked outlines retain the stronger width");
+                return method.getReturnType()==void.class?null:proxy;
+            });geometry.getFirst().render(stack.last(),markedSink);check(markedVertices[0]==24,"A single marked target adds twelve box edges, preserving entity dimensions");
+        }
+        var nearText=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f,0,false,0xad000000|(TimingSeverity.color(.01)&0xffffff),false);
+        var focusText=record(nested("Text"),label,new MarkerPosition(3,65,4,1.3),.025f*WorldMarkers.FOCUS_SCALE,0,true,TimingSeverity.color(.01),false);
         var passes=new ArrayList<String>();var scales=new ArrayList<Float>();var coloursInOrder=new ArrayList<Integer>();geometry.clear();
         var layered=(WorldOverlayDraw)Proxy.newProxyInstance(WorldOverlayDraw.class.getClassLoader(),new Class[]{WorldOverlayDraw.class},(proxy,method,args)->{
             if(method.getName().equals("flush"))passes.add("flush");
@@ -59,20 +74,20 @@ final class WorldMarkerRenderChecks {
             if(method.getName().equals("submitMarkerText")){passes.add("text");scales.add(((PoseStack)args[0]).last().pose().m00());coloursInOrder.add((int)args[4]);}
             return null;
         });
-        state.setRenderData(key,record(nested("Frame"),List.copyOf(blocks),List.of(nearText,focusText),net.minecraft.core.BlockPos.asLong(0,64,0)));
+        state.setRenderData(key,record(nested("Frame"),List.copyOf(blocks),List.of(nearText,focusText),net.minecraft.core.BlockPos.asLong(0,64,0),null));
         overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,layered);
         check(passes.equals(List.of("flush","flush","text")),"Only the focused caption is drawn, after all ordinary outlines");
         check(coloursInOrder.size()==1&&(coloursInOrder.getFirst()>>>24)==255&&Math.abs(scales.getFirst()-.025f*WorldMarkers.FOCUS_SCALE)<.0001,"Unfocused timing text is suppressed while focus keeps its existing opacity and scale");
         int[] focusedEdges={0},ordinaryEdges={0},focusedColours={0},ordinaryColours={0};
         var focusSink=(VertexConsumer)Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(),new Class[]{VertexConsumer.class},(proxy,method,args)->{
-            if(method.getName().equals("setColor")){int color=(int)args[0];if((color>>>24)==255)focusedColours[0]++;else{ordinaryColours[0]++;check((color>>>24)>0&&(color>>>24)<=57,"Unfocused geometry stays faint without dropping any edge");}}
-            if(method.getName().equals("setLineWidth")){float w=((Number)args[0]).floatValue();if(w==3)focusedEdges[0]++;else if(w==2)ordinaryEdges[0]++;else throw new AssertionError("Unexpected outline width");}
+            if(method.getName().equals("setColor")){int color=(int)args[0];if((color>>>24)==255)focusedColours[0]++;else{ordinaryColours[0]++;check((color>>>24)>=25&&(color>>>24)<=115,"Unfocused geometry stays faint without dropping any edge");}}
+            if(method.getName().equals("setLineWidth")){float w=((Number)args[0]).floatValue();if(w==8)focusedEdges[0]++;else if(w==2.5f)ordinaryEdges[0]++;else throw new AssertionError("Unexpected outline width");}
             return method.getReturnType()==void.class?null:proxy;
         });geometry.getFirst().render(stack.last(),focusSink);
         check(focusedEdges[0]==24&&ordinaryEdges[0]==23976&&focusedColours[0]==24&&ordinaryColours[0]==23976,"Only the aimed-at machine has a thicker outline and all other outlines remain present");
         check(WorldMarkers.PIPELINE.getDepthStencilState().depthTest()==com.mojang.blaze3d.platform.CompareOp.ALWAYS_PASS&&!WorldMarkers.PIPELINE.getDepthStencilState().writeDepth(),"Emphasised outlines still pass world depth without modifying it");
         var throwing=(WorldOverlayDraw)Proxy.newProxyInstance(WorldOverlayDraw.class.getClassLoader(),new Class[]{WorldOverlayDraw.class},(proxy,method,args)->{if(method.getName().equals("submitMarkerText"))throw new IllegalStateException("Fixture renderer failure");return null;});
-        state.setRenderData(key,record(nested("Frame"),List.of(),List.of(text),Long.MIN_VALUE));
+        state.setRenderData(key,record(nested("Frame"),List.of(),List.of(text),Long.MIN_VALUE,null));
         try{overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,throwing);throw new AssertionError("Expected fixture renderer failure");}catch(IllegalStateException expected){check(stack.last().pose().equals(before),"Billboard state is restored even if text submission fails");}
         state.setRenderData(key,null);textCalls.clear();overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);check(textCalls.isEmpty(),"Hidden/cleared marker frames submit no stale text");
         for(int i=0;i<=1000;i++){int base=TimingSeverity.color(12),color=WorldMarkers.outlineColor(base,false,i/10.0,100);check((color&0xffffff)==(base&0xffffff),"Fading preserves exact timing RGB");if(i>0)check((color>>>24)<=(WorldMarkers.outlineColor(base,false,(i-1)/10.0,100)>>>24),"Outline fade is monotonic");check(WorldMarkers.outlineColor(base,true,i/10.0,100)==base,"Focus stays unchanged at every distance");}
@@ -81,7 +96,7 @@ final class WorldMarkerRenderChecks {
     }
     private static void backgroundChecks(){
         int full=TimingSeverity.color(12),faint=(Math.round(.24f*255)<<24)|(full&0xffffff);
-        check((WorldText.background(full)>>>24)==153&&(WorldText.background(faint)>>>24)<40,"Dark backing has 60 percent opacity for focus and follows faint nearby labels");
+        check((WorldText.background(full)>>>24)==255&&(WorldText.background(faint)>>>24)==255,"Timing-label backing stays opaque for focused and faded labels");
         check((WorldText.background(full)&0xffffff)==0x08080b,"Backing is near black rather than opaque grey");
         var glyph=new net.minecraft.client.gui.font.glyphs.BakedSheetGlyph(com.mojang.blaze3d.font.GlyphInfo.simple(5),null,null,0,1,0,1,0,5,0,8);
         var source=new net.minecraft.client.gui.GlyphSource(){
@@ -101,7 +116,7 @@ final class WorldMarkerRenderChecks {
         var effect=effects.getFirst();check(Math.abs(effect.left()+25)<.01&&Math.abs(effect.top()-9)<.01&&Math.abs(effect.bottom()-19)<.01&&Math.abs(effect.right()-(-24+font.width(text)))<1.01,"Native backing follows the label origin and measured text bounds with one-pixel padding");
         int[] vertices={0};var sink=(VertexConsumer)Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(),new Class[]{VertexConsumer.class},(proxy,method,args)->{
             if(method.getName().equals("addVertex"))vertices[0]++;
-            if(method.getName().equals("setColor"))check((int)args[0]==WorldText.background(full),"Native effect vertices carry the dark translucent backing colour");
+            if(method.getName().equals("setColor"))check((int)args[0]==WorldText.background(full),"Native effect vertices carry the opaque near-black backing colour");
             return method.getReturnType()==void.class?null:proxy;
         });effect.render(new org.joml.Matrix4f(),sink,15728880,false);check(vertices[0]==4,"Each label adds just one compact native background quad");
         var depth=WorldText.COLOR.getDepthStencilState();check(depth.depthTest()==com.mojang.blaze3d.platform.CompareOp.ALWAYS_PASS&&!depth.writeDepth(),"Background effects use the custom RGBA text pipeline through walls without writing depth");
@@ -131,7 +146,7 @@ final class WorldMarkerRenderChecks {
         for(int i=0;i<200;i++)invokeSelection(handle,crowd,origin,direction);
         double ms=(System.nanoTime()-start)/200e6,bytes=(bean.getThreadAllocatedBytes(id)-allocated)/200.0;
         System.out.printf(Locale.ROOT,"World selection smoke benchmark: %.3f ms / 1,002 already eligible cubes, %.1f allocated bytes/frame. Excludes world extraction/GPU.%n",ms,bytes);check(bytes<256,"Ray selection allocates no per-cube objects: "+bytes+" bytes/frame");
-        textCalls.clear();state.setRenderData(key,record(nested("Frame"),dense,List.of(nearText),Long.MIN_VALUE));overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);check(textCalls.isEmpty(),"No focused target means no floating timing labels, even if stale ordinary captions are supplied");
+        textCalls.clear();state.setRenderData(key,record(nested("Frame"),dense,List.of(nearText),Long.MIN_VALUE,null));overlay.capture(new net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent(state,null,stack,List.of()));overlay.submit(state,stack,collector);check(textCalls.isEmpty(),"No focused target means no floating timing labels, even if stale ordinary captions are supplied");
     }
     private static Object block(int x,int y,int z,AABB box)throws Exception{
         var entry=new Report.Entry("Block","fixture:machine","minecraft:overworld",x,y,z,100,1);

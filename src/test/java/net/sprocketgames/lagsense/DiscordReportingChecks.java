@@ -18,6 +18,25 @@ final class DiscordReportingChecks {
     }
     private static Report with(Report source,CapturePerformance p){var d=source.diagnostics();return new Report(source.id(),source.capturedAt(),source.ticks(),source.mspt(),source.admin(),source.truncated(),source.entries(),false,0,source.chunks(),source.tps(),new Report.Diagnostics(d.trigger(),0,0,d.tasks(),d.notes(),d.callbacks(),d.callbackState(),d.cpu(),d.coverage(),d.background(),p));}
     private static String summary(JsonObject container){var values=new ArrayList<String>();for(var value:container.getAsJsonArray("components")){var component=value.getAsJsonObject();if(component.get("type").getAsInt()==10)values.add(component.get("content").getAsString());}return String.join("\n",values);}
+    private static void captureWarnings(){
+        var clean=fixture("Manual",100,50000000,1000000);
+        check(DiscordMessage.captureWarnings(clean).isEmpty(),"Complete captures have no generic completeness paragraph");
+        var builder=new CpuInvestigation.Builder("Server thread");builder.add(List.of(new CpuInvestigation.Frame("fixture","fixture.Worker","tick","()V")),true);
+        var cpu=builder.finish();String fullNote="CPU results limited: "+cpu.limitation();
+        var diagnostics=new Report.Diagnostics("Manual",0,0,List.of(),List.of(fullNote),List.of(),"disabled",cpu,null,BackgroundCpu.empty("disabled"));
+        var shortened=new Report(clean.id(),clean.capturedAt(),clean.ticks(),clean.mspt(),true,false,clean.entries(),false,0,clean.chunks(),clean.tps(),diagnostics);
+        check(cpu.limited()&&DiscordMessage.captureWarnings(shortened).isEmpty(),"One JVM-shortened stack with zero omitted paths or relationships does not add a Discord capture warning");
+        var settings=new ServerSettings.Delivery(true,0,5,0,0,"either","target","none","","degraded");
+        String message=DiscordMessage.build(shortened,config(true,10),settings,Profiler.JSON).json();
+        check(!message.contains("incomplete")&&!message.contains("Budget")&&!message.contains("shortened by the JVM")&&Profiler.JSON.toJson(shortened).contains(fullNote),"Detailed capture accounting remains in report data while Discord stays concise");
+        var limits=new CpuInvestigation.Limits(128L<<20,128L<<20,"adaptive",128,3,2,0,0);
+        var missing=new CpuInvestigation("ready","Server thread",10,7,true,List.of(),List.of(),List.of(),limits);
+        var lost=new Report(clean.id(),clean.capturedAt(),clean.ticks(),clean.mspt(),true,true,clean.entries(),false,0,clean.chunks(),clean.tps(),new Report.Diagnostics("Manual",0,0,List.of(),List.of("Capture stopped: target memory budget reached.","Event results limited: 2 attempts skipped."),List.of(),"enabled",missing,null,new BackgroundCpu("ready",List.of(),10,4,true,"")));
+        var warnings=DiscordMessage.captureWarnings(lost);
+        check(warnings.size()==4&&warnings.stream().anyMatch(n->n.contains("stopped early"))&&warnings.stream().anyMatch(n->n.contains("event timings"))&&warnings.stream().anyMatch(n->n.contains("server-thread CPU call paths"))&&warnings.stream().anyMatch(n->n.contains("background CPU")),"Real early stops and omitted target/event/CPU data remain visible as concise warnings");
+        var failed=new Report(clean.id(),clean.capturedAt(),clean.ticks(),clean.mspt(),true,false,clean.entries(),false,0,clean.chunks(),clean.tps(),new Report.Diagnostics("Manual",0,0,List.of(),List.of(),List.of(),"unavailable",CpuInvestigation.empty("unavailable"),null,BackgroundCpu.empty("unavailable")));
+        check(DiscordMessage.captureWarnings(failed).size()==3,"Actual sampling and event-capture failures remain visible");
+    }
     static void layout(JsonObject payload,String format){
         check(payload.get("flags").getAsInt()==32768&&!payload.has("embeds")&&!payload.has("content")&&!payload.has("poll"),"Components V2 excludes legacy content and embeds");
         var roots=payload.getAsJsonArray("components");check(roots.size()==1&&roots.get(0).getAsJsonObject().get("type").getAsInt()==17,"One compact summary Container is sent in one message");
@@ -30,6 +49,7 @@ final class DiscordReportingChecks {
     }
     private static Set<Path> temporary()throws Exception{try(var files=Files.list(Path.of(System.getProperty("java.io.tmpdir")))){return files.filter(p->p.getFileName().toString().startsWith("lagsense-discord-")).collect(java.util.stream.Collectors.toSet());}}
     static void run()throws Exception{
+        captureWarnings();
         var originalTemporary=temporary();
         var healthy=fixture("Manual",200,50_000_000,10_000_000);var warning=fixture("Scheduled",200,50_000_000,45_000_000);var degraded=fixture("Spike follow-up",150,66_666_667,20_000_000);var critical=fixture("Scheduled",80,125_000_000,110_000_000);
         check(ReportSeverity.evaluate(healthy)==ReportSeverity.HEALTHY&&ReportSeverity.evaluate(warning)==ReportSeverity.WARNING&&ReportSeverity.evaluate(degraded)==ReportSeverity.DEGRADED&&ReportSeverity.evaluate(critical)==ReportSeverity.CRITICAL,"Severity uses whole-capture TPS/workload across all four defined classes");

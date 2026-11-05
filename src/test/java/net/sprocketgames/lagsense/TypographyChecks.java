@@ -39,7 +39,7 @@ final class TypographyChecks {
                     providers.add(provider);
                 }
                 }
-                    for (int codepoint : "0123456789µΔ≥−→-°%/():,.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".codePoints().toArray())
+                    for (int codepoint : "0123456789µΔ≥−→↑↗↘↓↙←↖•-°%/():,.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".codePoints().toArray())
                         require(providers.stream().anyMatch(p -> p.getGlyph(codepoint) != null), face + " includes required symbol U+" + Integer.toHexString(codepoint));
             }
             for (var defaultFace : faces.keySet()) {

@@ -54,11 +54,11 @@ final class ProfilerHud {
         UiFonts.draw(g, UiFonts.hudStrong(s.scale), title, 9, 7, 222, UiTheme.ICE, false); UiFonts.draw(g, UiFonts.hudBody(s.scale), ageText, 9, 20, 222, UiTheme.SECONDARY, false);
         UiFonts.draw(g, UiFonts.hudBody(s.scale), stats, 9, 33, 222, UiTheme.TEXT, false); UiFonts.draw(g, UiFonts.hudBody(s.scale), ShortcutBindings.hudHint(), 9, 46, 222, UiTheme.SECONDARY, false);
         if (waypoint != null) {
-            var live=waypoint.entityId()==null?null:EntityMarkers.currentPose(waypoint,1);
-            boolean same = mc.player != null && mc.level != null && mc.level.dimension().identifier().toString().equals(live==null?waypoint.dimension():live.dimension());
-            String distance=!same?waypoint.dimension():waypoint.kind().equals("Entity")&&!(live==null&&LagSenseClient.waypointTicks>0)?live==null?"Entity unavailable":Math.round(mc.player.position().distanceTo(new net.minecraft.world.phys.Vec3(live.x(),live.y(),live.z())))+" blocks away":Math.round(mc.player.position().distanceTo(new net.minecraft.world.phys.Vec3(waypoint.x()+.5,waypoint.y(),waypoint.z()+.5)))+" blocks away";
+            var live=LagSenseClient.markedPose(1);
+            String distance=MarkedDirection.guidance(waypoint,live,mc.level.dimension().identifier().toString(),mc.player.getX(),mc.player.getY(),mc.player.getZ(),mc.player.getYRot(),LagSenseClient.trackingStatus());
             UiFonts.draw(g, UiFonts.hudBody(s.scale), "Marked: " + distance, 9, 59, 222, 0xffffe082, false);
-            UiFonts.draw(g, UiFonts.hudBody(s.scale), waypoint.x() + " " + waypoint.y() + " " + waypoint.z() + " (capture position)", 9, 72, 222, UiTheme.SECONDARY, false);
+            String location=live==null?waypoint.x()+" "+waypoint.y()+" "+waypoint.z()+" (capture position)":(int)Math.floor(live.x())+" "+(int)Math.floor(live.y())+" "+(int)Math.floor(live.z())+" (current position)";
+            UiFonts.draw(g, UiFonts.hudBody(s.scale), location, 9, 72, 222, UiTheme.SECONDARY, false);
         } else if (!top.isEmpty()) UiFonts.draw(g, UiFonts.hudBody(s.scale), top, 9, 59, 222, topColor, false);
         g.pose().popMatrix();
     }

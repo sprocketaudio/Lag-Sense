@@ -10,6 +10,7 @@ public final class ReportScreen extends LagScreen {
     private final net.minecraft.client.gui.screens.Screen parent;
     private int top;
     private String emptyTab="Targets";
+    private String emptyState="";
     private boolean byCount, byType,byMod;
     private String filter = "All", dimension = "All", note = "", query="",previousCategory="All";
     private record ViewState(int offset) {}
@@ -33,11 +34,24 @@ public final class ReportScreen extends LagScreen {
     public ReportScreen(net.minecraft.client.gui.screens.Screen parent) { this(parent,LagSenseClient.report,false); }
     public ReportScreen(net.minecraft.client.gui.screens.Screen parent,Report report,boolean archived) {
         super("LagSense");this.parent=parent instanceof ReportScreen?null:parent;this.report=report;this.archived=archived;
+        restorePreferences();
         chunkCounts=report==null?Map.of():ProfileResults.chunkCounts(report.entries());
         chunkUpdates=report==null?Map.of():report.entries().stream().collect(java.util.stream.Collectors.groupingBy(e->new ProfileResults.Chunk(e.dimension(),e.x()>>4,e.z()>>4),java.util.stream.Collectors.summingLong(Report.Entry::calls)));
         contributors=new ChunkBranches(this,report,archived);
     }
     @Override public void onClose() { if(profileNavigation!=null)profileNavigation.close();else minecraft.setScreen(parent); }
+    @Override public void removed(){rememberPreferences();super.removed();}
+    void rememberPreferences(){
+        if(report==null)return;
+        var value=new ResultViewSettings(filter,dimension,(byMod?"mod-":"")+(byType?"type":"instance"),byCount?"count":"time",query,filter.equals("Chunks")?previousCategory:filter);
+        if(!value.equals(LagSenseClient.settings.results)){LagSenseClient.settings.results=value;LagSenseClient.settings.save();}
+    }
+    private void restorePreferences(){
+        var value=LagSenseClient.settings.results;if(value==null)value=ResultViewSettings.defaults();
+        filter=value.category();previousCategory=value.targetCategory();
+        dimension=value.dimension();byMod=value.group().startsWith("mod-");byType=value.group().endsWith("type");byCount=value.sort().equals("count");query=value.search();
+        if(report!=null&&!dimension.equals("All")&&report.entries().stream().noneMatch(e->e.dimension().equals(dimension))&&(report.chunks()==null||report.chunks().stream().noneMatch(c->c.dimension().equals(dimension))))dimension="All";
+    }
     void emptyView(String tab){emptyTab=tab;}
     String currentCategory(){return filter;}
     String targetCategory(){return previousCategory;}
@@ -68,8 +82,10 @@ public final class ReportScreen extends LagScreen {
         if(profileNavigation==null)profileNavigation=new ProfileNavigation(this,parent,report,archived);
         if(report==null){
             int navBottom=profileNavigation.mount(this,emptyTab);top=navBottom+28;
+            emptyState=emptyMessage();
             int y=emptyMessageY();int buttonWidth=Math.max(112,UiFonts.labelWidth("Start Profile")+20);
-            if(ClientAccess.admin())primary("Start Profile",(width-buttonWidth)/2,y+26,buttonWidth,ShortcutBindings::start);
+            if(!ClientAccess.reportError().isBlank())primary("Retry",(width-buttonWidth)/2,y+26,buttonWidth,ClientAccess::open);
+            else if(!ClientAccess.reportLoading()&&ClientAccess.admin())primary("Start Profile",(width-buttonWidth)/2,y+26,buttonWidth,ShortcutBindings::start);
             action("Close",width-margin()-54,footer(),54,this::onClose);return;
         }
         int navBottom=profileNavigation.mount(this,filter);
@@ -78,14 +94,15 @@ public final class ReportScreen extends LagScreen {
         top=resultControls(navBottom).bottom()+8;
         refreshRows();
         copyButton(this::copySelected);
-        action("Export", margin() + 48, footer(), 48, () -> minecraft.setScreen(new ExportScreen(this, report,archived)));
-        action("Unmark", margin()+100, footer(),50,()->{LagSenseClient.waypoint=null;if(!report.admin())ClientAccess.request("unmark");});
-        if(report.admin())action("Return",margin()+154,footer(),48,()->{if(TargetActions.permitted(false)&&minecraft.player!=null)minecraft.player.connection.sendCommand("lagsense return");}).enabledWhen(()->TargetActions.permitted(false)).visibleWhen(()->TargetActions.permitted(false));
+        var export=action("Export",margin()+Math.max(44,UiFonts.labelWidth("Copy")+12)+4,footer(),48,()->minecraft.setScreen(new ExportScreen(this,report,archived)));
+        var unmark=action("Unmark",export.getX()+export.getWidth()+4,footer(),50,()->{LagSenseClient.waypoint=null;LagSenseClient.tracked(null);ClientAccess.request("unmark");});
+        if(report.admin())action("Return",unmark.getX()+unmark.getWidth()+4,footer(),48,()->{if(TargetActions.canReturn()&&minecraft.player!=null)minecraft.player.connection.sendCommand("lagsense return");}).enabledWhen(TargetActions::canReturn).visibleWhen(()->TargetActions.permitted(false));
         action("Close", width - margin() - 54, footer(), 54, this::onClose);
         note=ReportCompleteness.label(report);
         if(note.isEmpty())note = report.admin() && report.diagnostics() != null ? report.diagnostics().notes().stream().filter(n -> n.startsWith("Backup")).map(StatusText::note).findFirst().orElse("") : "";
     }
     int emptyMessageY(){return top+Math.max(8,(footer()-24-top-46)/2);}
+    String emptyMessage(){return ClientAccess.reportLoading()?"Loading profile…":!ClientAccess.reportError().isBlank()?ClientAccess.reportError():ClientAccess.admin()?"No profile captured yet":"No permitted results yet";}
     private void replaceOrMount(UiResults out){if(resultsMounted)replaceResults(out.entries);else{results(top,out.entries,true);resultsMounted=true;}}
     private boolean resultsMounted;
     private VisibleKey refreshData(){
@@ -170,11 +187,11 @@ public final class ReportScreen extends LagScreen {
     private void appendRow(UiResults out,Row item,boolean travel,Object id,int indent){
             var e=item.target();
             var actions=new ArrayList<UiResults.Action>();
-            actions.add(new UiResults.Action("Mark",()->{LagSenseClient.mark(report,e);minecraft.setScreen(null);}));
+            actions.add(new UiResults.Action("Mark",()->{if(item.chunk())LagSenseClient.markChunk(report,report.chunks().get(item.index()),item.index());else LagSenseClient.mark(report,e);minecraft.setScreen(null);}));
             if(travel){var destination=TargetActions.recorded(report,item.chunk()?TargetActions.chunk(report.chunks().get(item.index())):e,item.index(),item.chunk());if(destination!=null)actions.add(TargetActions.actions(this,destination)[1]);}
             Report.Chunk chunk=item.chunk()?report.chunks().get(item.index()):null;
             if(archived){
-                actions.clear();var destination=TargetActions.recorded(report,item.chunk()&&report.admin()?TargetActions.chunk(chunk):e,item.index(),item.chunk());
+                actions.clear();var destination=TargetActions.recorded(report,item.chunk()?TargetActions.chunk(chunk):e,item.index(),item.chunk());
                 if(destination!=null)actions.addAll(List.of(TargetActions.actions(this,destination)));
             }
             out.copy(()->item.chunk()?contributors.copy(chunk):new ResultText(ModNames::name).target(new ProfileResults.Target(item.index(),e),report.ticks()));
@@ -189,12 +206,13 @@ public final class ReportScreen extends LagScreen {
     }
     @Override public void tick() {
         if(report==null&&LagSenseClient.report!=null){minecraft.setScreen(new ReportScreen(null,LagSenseClient.report,false));return;}
+        if(report==null&&!emptyState.equals(emptyMessage()))rebuildWidgets();
         if(report!=null)contributors.tick(this::resultVisible);
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float partial) {
         if(profileNavigation!=null)profileNavigation.render(this,g,mx,my);else canvas(g,"PROFILE");
         if (report == null) {
-            String message=ClientAccess.admin()?"No profile captured yet":"No permitted results yet";int w=UiFonts.width(font,message);
+            String message=emptyMessage();int w=UiFonts.width(font,message);
             text(g,message,(width-w)/2,emptyMessageY(),w,UiTheme.SECONDARY);
         }
         else {

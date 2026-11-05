@@ -50,13 +50,18 @@ final class TooltipCleanupChecks {
         for(String name:List.of("Timer","Spikes","Manual")){
             var page=server("discord");set(page,"tab",name);page.init();
             check(widgets(page).stream().noneMatch(w->w.getMessage().getString().startsWith("Coordinates")),"Discord has no coordinate toggle");
-            exact(page,"Report file","Attach one report file. None sends the Discord summary without a file.");
+            exact(page,"None","Attach one report file. None sends the Discord summary without a file.");
             var controls=widgets(page);check(controls.stream().noneMatch(w->w.getMessage().getString().contains("Group repeats")||w.getMessage().getString().equals("Top contributors")),"Obsolete repeat and contributor-count labels are gone");
             var group=controls.stream().filter(UiButton.class::isInstance).map(UiButton.class::cast).filter(w->w.getMessage().getString().startsWith("Group:")).findFirst().orElseThrow();
             var mention=controls.stream().filter(UiButton.class::isInstance).map(UiButton.class::cast).filter(w->w.getMessage().getString().equals("Degraded or worse")).findFirst().orElseThrow();
+            var attachment=controls.stream().filter(UiButton.class::isInstance).map(UiButton.class::cast).filter(w->w.getMessage().getString().equals("None")).findFirst().orElseThrow();
+            var attachLabel=controls.stream().filter(w->w.getMessage().getString().equals("Attach file")).findFirst().orElseThrow();
+            var mentionLabel=controls.stream().filter(w->w.getMessage().getString().equals("Mention severity")).findFirst().orElseThrow();
+            check(attachment.getY()==mention.getY()&&attachment.getWidth()==mention.getWidth()&&attachLabel.getY()==mentionLabel.getY()&&attachLabel.getX()==attachment.getX(),"Attachment and mention controls have matching labels, rows and widths on every delivery tab");
             check(mention.getX()==group.getX()&&mention.getY()>group.getY()&&mention.getWidth()==group.getWidth(),"Mention severity is in the right column directly below Group");
             check(UiFonts.labelWidth(mention.getMessage().getString())<=mention.getWidth()-10,"Default mention choice fits its existing control");
             check(controls.stream().anyMatch(w->w.getMessage().getString().equals("Top results")),"Top results label is used consistently on all delivery tabs");
+            exact(page,"Top results","Number of results in each contributor section and the chunk list.");
             String prefix=name.toLowerCase(Locale.ROOT);var values=(Map<String,String>)field(page,"values");
             var apply=ServerSettingsScreen.class.getDeclaredMethod("desired");apply.setAccessible(true);
             for(String next:List.of("target","type","both")){values.put(prefix+".group",next);var draft=((ServerSettingsForms.View)apply.invoke(page)).discord();var delivery=switch(prefix){case "timer"->draft.timer();case "spikes"->draft.spikes();default->draft.manual();};check(delivery.groupBy().equals(next),"All three grouping choices bind to the editable delivery DTO");}

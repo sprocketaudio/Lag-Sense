@@ -50,12 +50,18 @@ public final class Investigations {
     }
     public static void cpu(Screen owner,Report report,boolean archived,Consumer<CpuInvestigation> ready,Consumer<String> error) {
         if(!report.admin()){error.accept("Operator access required.");return;}
+        var retained=retainedCpu(report);if(retained!=null){ready.accept(retained);return;}
         if(cached!=null&&cachedId==report.id()&&cachedArchive==archived&&!cached.state().equals("pending")){ready.accept(cached);return;}
         long token=++sequence;
         enqueue(owner,new InvestigationRequest(token,report.id(),archived,true,true,"",0,0),token,data->{
             if(data.cpu()==null){error.accept("CPU activity unavailable.");return;}
             cached=data.cpu();cachedId=report.id();cachedArchive=archived;ready.accept(cached);
         },error);
+    }
+    static CpuInvestigation retainedCpu(Report report){
+        if(report==null||!report.admin()||report.diagnostics()==null)return null;
+        var cpu=report.diagnostics().cpu();
+        return cpu==null||cpu.state().equals("pending")||cpu.state().equals("ready")&&cpu.treeSamples()>0&&cpu.methods().isEmpty()?null:cpu;
     }
     public static void cpu(Screen owner,Report report,boolean archived,Consumer<CpuInvestigation> ready) {cpu(owner,report,archived,ready,error->{});}
     public static void chunk(Screen parent,Report report,boolean archived,String dim,int x,int z) {
